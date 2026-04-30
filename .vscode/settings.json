@@ -1,0 +1,10 @@
+{
+    "typescript.autoClosingTags": false,
+    "css.lint.unknownAtRules": "ignore",
+    "scss.lint.unknownAtRules": "ignore",
+    "less.lint.unknownAtRules": "ignore",
+    "kiroAgent.configureMCP": "Disabled",
+    "python.autoComplete.extraPaths": [
+        "c:\\Users\\jawad\\.kiro\\extensions\\continue.continue-0.0.412-win32-x64"
+    ]
+}

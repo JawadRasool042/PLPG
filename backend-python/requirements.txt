@@ -1,0 +1,39 @@
+# Web Framework
+flask
+flask-cors
+gunicorn
+
+# Database
+pymongo
+motor
+
+# Authentication & Security
+pyjwt
+bcrypt
+python-dotenv
+
+# Email
+flask-mail
+
+# Validation
+email-validator
+pydantic
+
+# Machine Learning
+pandas
+scikit-learn
+matplotlib
+joblib
+numpy
+
+# AI/ML - Google Gemini
+google-generativeai
+
+# HTTP Client
+requests
+
+# Rate Limiting
+flask-limiter
+
+# Date/Time
+python-dateutil

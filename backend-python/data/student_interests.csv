@@ -1,0 +1,21 @@
+student_id,Coding,Web Development,Game Development,Cybersecurity,Data Science,Mobile Development,Cloud Computing,AI & Machine Learning,Physical Games / Sports,predicted_domain
+STUDENT_0001,9,8,5,3,6,4,5,7,2,Coding
+STUDENT_0002,3,4,9,2,3,5,2,4,3,Game Development
+STUDENT_0003,2,3,2,9,4,2,4,3,3,Cybersecurity
+STUDENT_0004,5,8,4,3,4,6,5,5,4,Web Development
+STUDENT_0005,6,5,3,4,9,4,6,8,2,Data Science
+STUDENT_0006,4,5,4,3,3,9,4,4,5,Mobile Development
+STUDENT_0007,5,4,3,5,6,4,9,6,3,Cloud Computing
+STUDENT_0008,7,6,5,4,5,4,5,9,2,AI & Machine Learning
+STUDENT_0009,8,7,6,4,5,5,4,6,3,Coding
+STUDENT_0010,2,3,3,8,3,2,5,3,4,Cybersecurity
+STUDENT_0011,4,9,5,3,4,7,5,5,3,Web Development
+STUDENT_0012,3,4,8,3,3,5,3,5,4,Game Development
+STUDENT_0013,5,4,3,6,7,4,8,6,2,Cloud Computing
+STUDENT_0014,6,5,4,3,9,4,5,8,3,Data Science
+STUDENT_0015,5,6,4,4,4,8,5,5,4,Mobile Development
+STUDENT_0016,3,2,3,2,3,2,3,4,10,Physical Games / Sports
+STUDENT_0017,2,3,2,3,2,3,2,3,9,Physical Games / Sports
+STUDENT_0018,4,4,5,3,3,4,3,4,8,Physical Games / Sports
+STUDENT_0019,3,3,4,2,2,3,2,3,9,Physical Games / Sports
+STUDENT_0020,5,4,3,4,4,5,4,5,7,Physical Games / Sports
