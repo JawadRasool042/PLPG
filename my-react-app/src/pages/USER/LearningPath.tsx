@@ -166,7 +166,7 @@ const DOMAIN_DATA: Record<string, {
 };
 
 const LearningPath: React.FC = () => {
-  const { userInterests, isAuthenticated, user } = useStore();
+  const { userInterests, isAuthenticated } = useStore();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'roadmap' | 'courses' | 'projects' | 'careers'>('roadmap');
 
@@ -230,7 +230,7 @@ const LearningPath: React.FC = () => {
               <p className="text-white/80 leading-relaxed">{domain.description}</p>
               <div className="flex items-center gap-4 mt-4">
                 <span className="bg-white/20 px-3 py-1 rounded-full text-sm font-medium">
-                  🎯 {Math.round(userInterests.confidence)}% match
+                  🎯 {Math.round(userInterests.confidence * 100)}% match
                 </span>
                 <span className="bg-white/20 px-3 py-1 rounded-full text-sm font-medium">
                   📚 {domain.roadmap.length} phases

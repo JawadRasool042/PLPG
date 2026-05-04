@@ -84,7 +84,7 @@ const Dashboard: React.FC = () => {
       `Overall Accuracy: ${performance.overallStats.totalQuestions > 0 ? Math.round((performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100) : 0}%`,
       ``,
       `=== LEARNING INTERESTS ===`,
-      userInterests ? `Primary Interest: ${userInterests.primaryInterest} (${Math.round(userInterests.confidence)}% confidence)` : 'Not assessed yet',
+      userInterests ? `Primary Interest: ${userInterests.primaryInterest} (${Math.round(userInterests.confidence * 100)}% confidence)` : 'Not assessed yet',
       ...(userInterests?.allInterests.slice(0, 5).map(i => `  - ${i.domain}: ${Math.round(i.confidence * 100)}%`) ?? []),
       ``,
       `=== PERFORMANCE BY TOPIC ===`,
@@ -241,11 +241,11 @@ const Dashboard: React.FC = () => {
                   <div className="flex-1 bg-white rounded-full h-3 overflow-hidden">
                     <div 
                       className="bg-gradient-to-r from-indigo-600 to-purple-600 h-full rounded-full transition-all"
-                      style={{ width: `${Math.round(userInterests.confidence)}%` }}
+                      style={{ width: `${Math.round(userInterests.confidence * 100)}%` }}
                     ></div>
                   </div>
                   <span className="text-sm font-semibold text-indigo-600">
-                    {Math.round(userInterests.confidence)}%
+                    {Math.round(userInterests.confidence * 100)}%
                   </span>
                 </div>
               </div>

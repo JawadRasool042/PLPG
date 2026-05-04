@@ -1,17 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, Navigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
-import { getQuiz, submitQuiz, type Quiz } from '../../services/quizService';
+import { getQuiz, submitQuiz, submitMixedQuizAttempt, type Quiz, type MixedQuestion } from '../../services/quizService';
+
+interface QuizData {
+  isMixed: boolean;
+  totalQuestions: number;
+  domain?: string;
+  difficulty?: string;
+  level?: string;
+  interest?: string;
+  questions: MixedQuestion[] | Quiz['questions'];
+  id?: string;
+}
 
 const QuizAttempt: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, user } = useStore();
 
-  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [quiz, setQuiz] = useState<QuizData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<number, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
@@ -24,8 +36,48 @@ const QuizAttempt: React.FC = () => {
   const loadQuiz = async () => {
     try {
       setLoading(true);
-      const quizData = await getQuiz(quizId!);
-      setQuiz(quizData);
+      // If a quiz payload was passed via navigation state, use it (supports mixed quizzes)
+      const stateQuiz: any = (location && (location.state as any)?.quiz) || null;
+      if (stateQuiz) {
+        // Detect mixed quiz by presence of question_count or first question having a "type"
+        const isMixed = !!(stateQuiz.question_count || (stateQuiz.questions && stateQuiz.questions[0] && stateQuiz.questions[0].type));
+        if (isMixed) {
+          setQuiz({
+            isMixed: true,
+            totalQuestions: stateQuiz.question_count || stateQuiz.questions.length,
+            domain: stateQuiz.domain,
+            difficulty: stateQuiz.difficulty,
+            questions: stateQuiz.questions,
+            id: stateQuiz.id || stateQuiz.quiz_id,
+          });
+          return;
+        }
+        // Otherwise treat as legacy quiz payload
+        if (stateQuiz.questions) {
+          setQuiz({
+            isMixed: false,
+            totalQuestions: stateQuiz.totalQuestions || stateQuiz.questions.length,
+            level: stateQuiz.level || stateQuiz.difficulty,
+            interest: stateQuiz.interest || stateQuiz.domain,
+            questions: stateQuiz.questions,
+            id: stateQuiz.id || stateQuiz.quiz_id,
+          });
+          return;
+        }
+      }
+
+      // Fallback: fetch legacy quiz by id
+      if (quizId) {
+        const quizData = await getQuiz(quizId!);
+        setQuiz({
+          isMixed: false,
+          totalQuestions: quizData.totalQuestions,
+          level: quizData.level,
+          interest: quizData.interest,
+          questions: quizData.questions,
+          id: quizData.id,
+        });
+      }
     } catch (error: any) {
       alert(error.message || 'Failed to load quiz');
       navigate('/quizzes');
@@ -35,9 +87,22 @@ const QuizAttempt: React.FC = () => {
   };
 
   const handleAnswerSelect = (answer: string) => {
+    if (!quiz) return;
+    const question: any = (quiz.questions as any[])[currentQuestion];
+    const key = quiz.isMixed ? Number(question?.id ?? currentQuestion) : currentQuestion;
     setAnswers({
       ...answers,
-      [currentQuestion]: answer,
+      [key]: answer,
+    });
+  };
+
+  const handleShortAnswerChange = (answer: string) => {
+    if (!quiz) return;
+    const question: any = (quiz.questions as any[])[currentQuestion];
+    const key = quiz.isMixed ? Number(question?.id ?? currentQuestion) : currentQuestion;
+    setAnswers({
+      ...answers,
+      [key]: answer,
     });
   };
 
@@ -59,7 +124,9 @@ const QuizAttempt: React.FC = () => {
     // Check if all questions are answered
     const unanswered = [];
     for (let i = 0; i < quiz.totalQuestions; i++) {
-      if (!answers[i]) {
+      const q: any = (quiz.questions as any[])[i];
+      const key = quiz.isMixed ? Number(q?.id ?? i) : i;
+      if (!answers[key] || answers[key].trim() === '') {
         unanswered.push(i + 1);
       }
     }
@@ -73,8 +140,22 @@ const QuizAttempt: React.FC = () => {
 
     try {
       setSubmitting(true);
-      const attempt = await submitQuiz(quizId!, answers);
-      navigate(`/quiz/results/${attempt.id}`);
+      let attempt;
+      
+      if (quiz.isMixed) {
+        attempt = await submitMixedQuizAttempt(
+          quiz.id!,
+          answers,
+          quiz.domain!,
+          quiz.difficulty!,
+          user!.id
+        );
+        // Mixed-quiz flow: continue to learning path (roadmap is generated server-side on demand).
+        navigate(`/learning-path`, { state: { mixedAttempt: attempt } });
+      } else {
+        attempt = await submitQuiz(quizId!, answers);
+        navigate(`/quiz/results/${attempt.id}`);
+      }
     } catch (error: any) {
       alert(error.message || 'Failed to submit quiz');
     } finally {
@@ -116,8 +197,8 @@ const QuizAttempt: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{quiz.interest}</h1>
-              <p className="text-sm text-slate-600">Level: {quiz.level}</p>
+              <h1 className="text-2xl font-bold text-slate-900">{quiz.isMixed ? quiz.domain : quiz.interest}</h1>
+              <p className="text-sm text-slate-600">Level: {quiz.isMixed ? quiz.difficulty : quiz.level}</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-slate-600">Question</p>
@@ -137,42 +218,68 @@ const QuizAttempt: React.FC = () => {
         {/* Question Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-6">
           <h2 className="text-xl font-semibold text-slate-900 mb-6">
-            {question.q}
+            {(question as any).type === 'scenario' && (question as any).scenario_context ? (
+              <span>
+                <span className="block text-sm text-slate-500 mb-2">Scenario</span>
+                <span className="block whitespace-pre-wrap">{(question as any).scenario_context}</span>
+                <span className="block mt-4">{(question as any).q}</span>
+              </span>
+            ) : (
+              (question as any).q
+            )}
           </h2>
 
-          <div className="space-y-3">
-            {question.options.map((option, idx) => {
-              const letter = option.charAt(0); // Extract A, B, C, D
-              const isSelected = answers[currentQuestion] === letter;
+          {/* Mixed open-answer questions */}
+          {quiz.isMixed && (((question as any).type === 'short_answer') || ((question as any).type === 'scenario')) ? (
+            <div>
+              <textarea
+                value={answers[Number((question as any).id)] || ''}
+                onChange={(e) => handleShortAnswerChange(e.target.value)}
+                rows={5}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+                placeholder="Type your answer..."
+              />
+              <p className="text-xs text-slate-500 mt-2">
+                Tip: include key terms and explain briefly.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(question as any).options.map((option: string, idx: number) => {
+                const isTF = quiz.isMixed && (question as any).type === 'true_false';
+                const letter = isTF ? option : option.charAt(0); // True/False uses full label
+                const answerKey = quiz.isMixed ? Number((question as any).id) : currentQuestion;
+                const isSelected = answers[answerKey] === letter;
 
-              return (
-                <button
-                  key={idx}
-                  onClick={() => handleAnswerSelect(letter)}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
-                    ? 'border-indigo-600 bg-indigo-50'
-                    : 'border-slate-200 hover:border-indigo-300 bg-white'
-                    }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected
-                      ? 'border-indigo-600 bg-indigo-600'
-                      : 'border-slate-300'
-                      }`}>
-                      {isSelected && (
-                        <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleAnswerSelect(letter)}
+                    className={`w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
+                      ? 'border-indigo-600 bg-indigo-50'
+                      : 'border-slate-200 hover:border-indigo-300 bg-white'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${isSelected
+                        ? 'border-indigo-600 bg-indigo-600'
+                        : 'border-slate-300'
+                        }`}>
+                        {isSelected && (
+                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-base ${isSelected ? 'text-indigo-900 font-medium' : 'text-slate-700'}`}>
+                        {option}
+                      </span>
                     </div>
-                    <span className={`text-base ${isSelected ? 'text-indigo-900 font-medium' : 'text-slate-700'}`}>
-                      {option}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Navigation */}

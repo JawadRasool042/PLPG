@@ -98,6 +98,108 @@ export interface UserPerformance {
   updatedAt: string;
 }
 
+// Mixed quiz types
+export type QuestionType = 'mcq' | 'true_false' | 'short_answer' | 'scenario';
+
+export interface MCQQuestion {
+  type: 'mcq';
+  id: number;
+  q: string;
+  options: string[];
+  correct_answer: string;
+  explanation: string;
+}
+
+export interface TrueFalseQuestion {
+  type: 'true_false';
+  id: number;
+  q: string;
+  options: ['True', 'False'];
+  correct_answer: 'True' | 'False';
+  explanation: string;
+}
+
+export interface ShortAnswerQuestion {
+  type: 'short_answer';
+  id: number;
+  q: string;
+  expected_keywords: string[];
+  correct_answer: string;
+  explanation: string;
+}
+
+export interface ScenarioQuestion {
+  type: 'scenario';
+  id: number;
+  scenario_context: string;
+  q: string;
+  expected_keywords: string[];
+  correct_answer: string;
+  explanation: string;
+}
+
+export type MixedQuestion = MCQQuestion | TrueFalseQuestion | ShortAnswerQuestion | ScenarioQuestion;
+
+export interface MixedQuiz {
+  id?: string;
+  domain: string;
+  difficulty: string;
+  question_count: number;
+  questions: MixedQuestion[];
+  created_at?: string;
+}
+
+export interface MixedQuizAttempt {
+  attempt_id?: string;
+  quiz_id?: string;
+  domain: string;
+  difficulty: string;
+  answers: Record<number, string>;
+  score: number;
+  summary?: string;
+  submitted_at?: string;
+}
+
+export interface UserProfile {
+  user_id?: string;
+  email?: string;
+  user?: {
+    id: string;
+    email: string;
+    name: string;
+    preferences?: Record<string, any>;
+  };
+  latest_prediction?: {
+    primary_interest: string;
+    secondary_interests: string[];
+    confidence_score: number;
+    analysis_timestamp: string;
+  };
+  latest_roadmap?: {
+    domain: string;
+    current_level: string;
+    career_paths: Array<{
+      title: string;
+      median_salary: string;
+      market_demand: string;
+      alignment_score: number;
+    }>;
+    skill_roadmap: Array<{
+      phase: string;
+      skills: string[];
+      timeline: string;
+    }>;
+  };
+  latest_progress?: {
+    total_xp: number;
+    level: number;
+    current_streak: number;
+    achievements: string[];
+    last_activity: string;
+  };
+  latest_quiz?: MixedQuiz & { attempt_score?: number };
+}
+
 /**
  * Get authorization token from localStorage
  */
@@ -258,6 +360,201 @@ export const getQuizAttempt = async (attemptId: string): Promise<QuizAttempt> =>
   }
 };
 
+/**
+ * Generate a mixed-type quiz (supports MCQ, True/False, Short Answer, Scenario)
+ */
+export const generateMixedQuiz = async (
+  domain: string,
+  difficulty: string = 'intermediate',
+  questionCount: number = 10,
+  userProfile?: any
+): Promise<MixedQuiz> => {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/advanced/generate-quiz`,
+      {
+        domain,
+        difficulty,
+        question_count: questionCount,
+        user_profile: userProfile,
+      },
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      const rawQuestions = (response.data.quiz || response.data.questions || []) as any[];
+      const questions: MixedQuestion[] = rawQuestions.map((q: any) => {
+        const base = {
+          id: Number(q.id),
+          type: q.type as QuestionType,
+          q: q.question,
+          explanation: q.explanation,
+        } as any;
+
+        if (q.type === 'mcq') {
+          const opts = q.options || {};
+          const options = Array.isArray(opts)
+            ? opts
+            : ['A', 'B', 'C', 'D'].map((k) => `${k}) ${opts[k] ?? ''}`.trim());
+          return { ...base, options, correct_answer: q.correct_answer } as MCQQuestion;
+        }
+
+        if (q.type === 'true_false') {
+          return {
+            ...base,
+            options: ['True', 'False'],
+            correct_answer: q.correct_answer,
+          } as TrueFalseQuestion;
+        }
+
+        if (q.type === 'scenario') {
+          return {
+            ...base,
+            scenario_context: q.scenario,
+            expected_keywords: q.expected_keywords || [],
+            correct_answer: q.correct_answer,
+          } as ScenarioQuestion;
+        }
+
+        return {
+          ...base,
+          expected_keywords: q.expected_keywords || [],
+          correct_answer: q.correct_answer,
+        } as ShortAnswerQuestion;
+      });
+
+      return {
+        domain: response.data.domain,
+        difficulty: response.data.difficulty,
+        question_count: response.data.question_count,
+        questions,
+        id: response.data.quiz_id,
+        created_at: new Date().toISOString(),
+      };
+    }
+    throw new Error(response.data.message || 'Failed to generate mixed quiz');
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || error.message || 'Failed to generate mixed quiz');
+  }
+};
+
+/**
+ * Submit a mixed quiz attempt
+ */
+export const submitMixedQuizAttempt = async (
+  quizId: string,
+  answers: Record<number, string>,
+  domain: string,
+  difficulty: string,
+  userId: string
+): Promise<MixedQuizAttempt> => {
+  try {
+    const response = await axios.post(
+      `${API_BASE_URL}/advanced/submit-quiz`,
+      {
+        user_id: userId,
+        quiz_id: quizId,
+        answers,
+        domain,
+        difficulty,
+      },
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      return response.data.attempt || {
+        quiz_id: quizId,
+        domain,
+        difficulty,
+        answers,
+        score: response.data.score || response.data.attempt?.score || 0,
+        summary: response.data.summary,
+      };
+    }
+    throw new Error(response.data.message || 'Failed to submit quiz attempt');
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || error.message || 'Failed to submit quiz attempt');
+  }
+};
+
+/**
+ * Get comprehensive user profile with latest data
+ */
+export const getUserProfile = async (userId: string): Promise<UserProfile> => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/advanced/user-profile/${userId}`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      return response.data;
+    }
+    throw new Error(response.data.message || 'Failed to fetch user profile');
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch user profile');
+  }
+};
+
+/**
+ * Get latest progress data
+ */
+export const getLatestProgress = async (userId: string) => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/advanced/latest-progress/${userId}`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      return response.data;
+    }
+    throw new Error(response.data.message || 'Failed to fetch progress data');
+  } catch (error: any) {
+    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch progress data');
+  }
+};
+
+/**
+ * Get latest quiz
+ */
+export const getLatestQuiz = async (userId: string): Promise<MixedQuiz | null> => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/advanced/latest-quiz/${userId}`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success && response.data.quiz) {
+      return response.data.quiz;
+    }
+    return null;
+  } catch (error: any) {
+    console.warn('Failed to fetch latest quiz:', error.message);
+    return null;
+  }
+};
+
+/**
+ * Get latest roadmap
+ */
+export const getLatestRoadmap = async (userId: string) => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/advanced/latest-roadmap/${userId}`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      return response.data.roadmap;
+    }
+    return null;
+  } catch (error: any) {
+    console.warn('Failed to fetch latest roadmap:', error.message);
+    return null;
+  }
+};
+
 export default {
   generateQuiz,
   getQuiz,
@@ -266,4 +563,10 @@ export default {
   getQuizHistory,
   getUserPerformance,
   getQuizAttempt,
+  generateMixedQuiz,
+  submitMixedQuizAttempt,
+  getUserProfile,
+  getLatestProgress,
+  getLatestQuiz,
+  getLatestRoadmap,
 };

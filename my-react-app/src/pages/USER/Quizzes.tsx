@@ -138,7 +138,7 @@ const Quizzes: React.FC = () => {
                 <div className="ml-13">
                   <p className="text-slate-600 mb-4">
                     Your primary interest: <span className="font-semibold text-indigo-600">{userInterests.primaryInterest}</span>
-                    <span className="text-slate-500 ml-2">({Math.round(userInterests.confidence)}% confidence)</span>
+                    <span className="text-slate-500 ml-2">({Math.round(userInterests.confidence * 100)}% confidence)</span>
                   </p>
                   <div className="flex flex-wrap gap-2 mb-4">
                     {userInterests.allInterests.slice(0, 3).map((interest, index) => (
