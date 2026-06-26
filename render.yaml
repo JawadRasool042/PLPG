@@ -1,0 +1,20 @@
+# Render Blueprint — free tier backend (optional: import via Render Dashboard → Blueprints)
+# Does not affect local development (you still run: python app.py)
+services:
+  - type: web
+    name: plpg-api
+    runtime: python
+    plan: free
+    rootDir: backend-python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --workers 1
+    healthCheckPath: /api/health
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      # Set secrets in Render Dashboard after deploy (do not commit real values):
+      # SECRET_KEY, MONGODB_URI, JWT_SECRET, JWT_REFRESH_SECRET,
+      # ADMIN_JWT_SECRET, ADMIN_JWT_REFRESH_SECRET, OPENAI_API_KEY,
+      # FRONTEND_BASE_URL (your Vercel URL, after frontend deploy)
