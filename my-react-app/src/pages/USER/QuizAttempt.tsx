@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
-import { getQuiz, submitQuiz, submitMixedQuizAttempt, type Quiz, type MixedQuestion, type MixedQuizAttempt, type QuizAttempt, type QuizResult } from '../../services/quizService';
+import { getQuiz, submitQuiz, submitMixedQuizAttempt, type Quiz, type MixedQuestion, type MixedQuizAttempt, type QuizAttempt as QuizAttemptRecord, type QuizResult } from '../../services/quizService';
 import {
   fetchNextAction,
   recordReward,
@@ -63,7 +63,17 @@ const initialCounters: AdaptiveCounters = {
   answered: 0,
 };
 
-function buildMixedResultsSnapshot(quiz: QuizData, attempt: MixedQuizAttempt): QuizAttempt {
+function getMixedQuestionText(q: MixedQuestion): string {
+  return q.q || '';
+}
+
+function getMixedQuestionOptions(q: MixedQuestion): string[] {
+  if (q.type === 'mcq') return q.options.map(String);
+  if (q.type === 'true_false') return [...q.options];
+  return [];
+}
+
+function buildMixedResultsSnapshot(quiz: QuizData, attempt: MixedQuizAttempt): QuizAttemptRecord {
   const questions = (quiz.questions || []) as MixedQuestion[];
   const rawResults = attempt.results || [];
   const results: QuizResult[] = questions.map((q, idx) => {
@@ -71,14 +81,10 @@ function buildMixedResultsSnapshot(quiz: QuizData, attempt: MixedQuizAttempt): Q
       rawResults.find((r) => r.id != null && Number(r.id) === Number(q.id)) ??
       rawResults[idx] ??
       {};
-    const options = q.options
-      ? Array.isArray(q.options)
-        ? q.options.map(String)
-        : Object.values(q.options).map(String)
-      : [];
+    const options = getMixedQuestionOptions(q);
     return {
       questionIndex: idx,
-      question: q.question || '',
+      question: getMixedQuestionText(q),
       options,
       userAnswer: String(raw.user_answer ?? ''),
       correctAnswer: String(raw.correct_answer ?? q.correct_answer ?? ''),
@@ -103,7 +109,7 @@ function buildMixedResultsSnapshot(quiz: QuizData, attempt: MixedQuizAttempt): Q
 function goToQuizResults(
   navigate: ReturnType<typeof useNavigate>,
   attemptId: string,
-  snapshot: QuizAttempt,
+  snapshot: QuizAttemptRecord,
   mixedAttempt?: { domain?: string; score?: number },
   remediation?: import('../../services/remediationService').RemediationStatus,
 ) {
@@ -119,7 +125,7 @@ function goToQuizResults(
   });
 }
 
-const QuizAttempt: React.FC = () => {
+const QuizAttemptPage: React.FC = () => {
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -742,4 +748,4 @@ const QuizAttempt: React.FC = () => {
   );
 };
 
-export default QuizAttempt;
+export default QuizAttemptPage;
