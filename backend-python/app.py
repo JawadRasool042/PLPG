@@ -210,6 +210,17 @@ except Exception as e:
     logger.error(f"Failed to load ML model: {e}")
 
 
+@app.route("/", methods=["GET"])
+def root():
+    """Root probe — use /api/health for full status."""
+    return jsonify({
+        "service": "PLPG API",
+        "status": "ok",
+        "health": "/api/health",
+        "python_backend": True,
+    })
+
+
 @app.route("/api/health", methods=["GET"])
 def health():
     """Health check endpoint"""
