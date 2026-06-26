@@ -1,8 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import ErrorState from '../../components/ErrorState';
+import { API_BASE_URL, asFetchNetworkError } from '../../config/apiBase';
+import { getUserProfile } from '../../services/authService';
+import {
+  getQuizHistory,
+  getUserPerformance,
+  type QuizAttempt,
+  type UserPerformance,
+} from '../../services/quizService';
 
 interface ProfileData {
   id: string;
@@ -27,6 +35,119 @@ interface ProfileData {
 const learningGoalOptions = ['Career growth', 'Skill upgrade', 'Exam prep', 'Research', 'Certification'];
 const focusDomainOptions = ['AI', 'Web Development', 'Data Science', 'Cloud', 'Cybersecurity', 'Product', 'Design'];
 
+type LearningSyncState = 'idle' | 'saving' | 'saved' | 'error';
+
+type TimelineRow = {
+  id: string;
+  title: string;
+  detail: string;
+  at: Date;
+};
+
+function learningFieldsSignature(fd: {
+  learning_level: string;
+  learning_goals: string[];
+  weekly_availability_hours: number | string;
+  content_format: string;
+  focus_domains: string[];
+}) {
+  const hours =
+    fd.weekly_availability_hours === '' || fd.weekly_availability_hours === undefined
+      ? null
+      : Number(fd.weekly_availability_hours);
+  return JSON.stringify({
+    learning_level: fd.learning_level,
+    learning_goals: [...fd.learning_goals].sort(),
+    weekly_availability_hours: hours,
+    content_format: fd.content_format,
+    focus_domains: [...fd.focus_domains].sort(),
+  });
+}
+
+function formatRelativeTime(at: Date): string {
+  const sec = Math.floor((Date.now() - at.getTime()) / 1000);
+  if (sec < 45) return 'Just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  if (sec < 86400 * 7) return `${Math.floor(sec / 86400)}d ago`;
+  return at.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/** Maps quiz volume + average score into a single learning tier (persisted on profile). */
+function deriveLearningLevelFromPerformance(
+  attempts: QuizAttempt[],
+  perf: UserPerformance | null,
+): { level: 'Beginner' | 'Intermediate' | 'Advanced'; detail: string } {
+  const sorted = [...attempts].sort(
+    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime(),
+  );
+  const scores = sorted
+    .map((a) => (typeof a.score === 'number' && !Number.isNaN(a.score) ? a.score : NaN))
+    .filter((s) => !Number.isNaN(s));
+  const avgFromAttempts = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : NaN;
+  const avgOverall = perf?.overallStats?.averageScore;
+  const avg = Number.isFinite(avgFromAttempts) ? avgFromAttempts : (avgOverall ?? 0);
+  const totalReported = perf?.overallStats?.totalQuizzes ?? 0;
+  const sampleCount = Math.max(totalReported, scores.length, sorted.length);
+
+  if (sampleCount === 0) {
+    return {
+      level: 'Beginner',
+      detail: 'No quiz history yet — level stays Beginner until you complete attempts.',
+    };
+  }
+
+  if (sampleCount >= 10 && avg >= 80) {
+    return {
+      level: 'Advanced',
+      detail: `${Math.round(avg)}% average across ${sampleCount}+ quizzes — advanced track.`,
+    };
+  }
+  if (sampleCount >= 6 && avg >= 74) {
+    return {
+      level: 'Advanced',
+      detail: `${Math.round(avg)}% average with ${sampleCount} attempts — strong mastery signals.`,
+    };
+  }
+  if (sampleCount >= 4 && avg >= 62) {
+    return {
+      level: 'Intermediate',
+      detail: `${Math.round(avg)}% average over ${sampleCount} quizzes — intermediate pacing.`,
+    };
+  }
+  if (sampleCount >= 2 && avg >= 52) {
+    return {
+      level: 'Intermediate',
+      detail: `${Math.round(avg)}% average — progressing; keep practicing to reach advanced.`,
+    };
+  }
+  return {
+    level: 'Beginner',
+    detail: `${Math.round(avg)}% average (${sampleCount} quiz${sampleCount === 1 ? '' : 'zes'}) — beginner support until scores lift.`,
+  };
+}
+
+function attemptsToTimelineRows(attempts: QuizAttempt[]): TimelineRow[] {
+  return attempts.map((a) => {
+    const at = a.completedAt ? new Date(a.completedAt) : new Date();
+    const typeLabel =
+      a.quizType === 'ai' || a.quizType === 'ai_quiz'
+        ? 'Completed AI quiz'
+        : a.quizType === 'strict'
+          ? 'Completed quiz'
+          : 'Completed quiz';
+    const detail = [a.interest, a.level, typeof a.score === 'number' ? `${Math.round(a.score)}%` : '']
+      .filter(Boolean)
+      .join(' · ');
+    return {
+      id: `quiz-${a.id}`,
+      title: typeLabel,
+      detail: detail || 'Quiz attempt',
+      at: Number.isNaN(at.getTime()) ? new Date() : at,
+    };
+  });
+}
+
 // Countries list including Pakistan
 const countries = [
   'Pakistan', 'Afghanistan', 'Albania', 'Algeria', 'Argentina', 'Australia', 'Austria', 'Bangladesh', 
@@ -37,13 +158,6 @@ const countries = [
   'South Korea', 'Spain', 'Sri Lanka', 'Sweden', 'Switzerland', 'Thailand', 'Turkey', 'UAE', 
   'United Kingdom', 'United States', 'Vietnam'
 ].sort();
-
-// Mock activity timeline data
-const activityTimeline = [
-  { title: 'Completed Quiz', detail: 'Web Development Basics', time: '2h ago' },
-  { title: 'Updated Profile', detail: 'Added learning goals', time: '1d ago' },
-  { title: 'Started Course', detail: 'Introduction to AI', time: '3d ago' },
-];
 
 const Profile: React.FC = () => {
   const navigate = useNavigate();
@@ -73,6 +187,54 @@ const Profile: React.FC = () => {
   const [locationSuggestions, setLocationSuggestions] = useState<string[]>([]);
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
 
+  const [quizTimelineRows, setQuizTimelineRows] = useState<TimelineRow[]>([]);
+  const [attemptsForLevel, setAttemptsForLevel] = useState<QuizAttempt[]>([]);
+  const [perfSnapshot, setPerfSnapshot] = useState<UserPerformance | null>(null);
+  const [learningSignalsLoaded, setLearningSignalsLoaded] = useState(false);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [learningSyncState, setLearningSyncState] = useState<LearningSyncState>('idle');
+  const [learningSyncMessage, setLearningSyncMessage] = useState('');
+  const [lastLearningSyncBanner, setLastLearningSyncBanner] = useState<{ at: Date; detail: string } | null>(null);
+
+  const lastSyncedLearningSig = useRef<string | null>(null);
+  const learningSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshLearningAndTimeline = useCallback(async () => {
+    try {
+      setTimelineLoading(true);
+      const [attemptsRes, perfRes] = await Promise.allSettled([
+        getQuizHistory(40),
+        getUserPerformance(),
+      ]);
+      const attempts = attemptsRes.status === 'fulfilled' ? attemptsRes.value : [];
+      const perf = perfRes.status === 'fulfilled' ? perfRes.value : null;
+      setAttemptsForLevel(attempts);
+      setPerfSnapshot(perf);
+      setQuizTimelineRows(attemptsToTimelineRows(attempts.slice(0, 12)));
+    } catch {
+      setQuizTimelineRows([]);
+      setAttemptsForLevel([]);
+      setPerfSnapshot(null);
+    } finally {
+      setTimelineLoading(false);
+      setLearningSignalsLoaded(true);
+    }
+  }, []);
+
+  const performanceLearning = useMemo(
+    () => deriveLearningLevelFromPerformance(attemptsForLevel, perfSnapshot),
+    [attemptsForLevel, perfSnapshot],
+  );
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    setFormData((prev) =>
+      prev.learning_level === performanceLearning.level
+        ? prev
+        : { ...prev, learning_level: performanceLearning.level },
+    );
+  }, [performanceLearning.level, profile?.id]);
+
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/login');
@@ -84,20 +246,8 @@ const Profile: React.FC = () => {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-
-      const response = await fetch(`${apiBaseUrl}/profile`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-
-      const data = await response.json();
+      setError('');
+      const data = (await getUserProfile()) as ProfileData;
       setProfile(data);
       setFormData({
         first_name: data.first_name || '',
@@ -105,15 +255,33 @@ const Profile: React.FC = () => {
         phone: data.phone || '',
         bio: data.bio || '',
         location: data.location || '',
-        date_of_birth: data.date_of_birth ? data.date_of_birth.split('T')[0] : '',
+        date_of_birth: data.date_of_birth ? String(data.date_of_birth).split('T')[0] : '',
+        learning_level: (data.learning_level as ProfileData['learning_level']) || 'Beginner',
+        learning_goals: data.learning_goals || [],
+        weekly_availability_hours: data.weekly_availability_hours ?? '',
+        content_format: (data.content_format as ProfileData['content_format']) || 'Mixed',
+        focus_domains: data.focus_domains || [],
+      });
+      lastSyncedLearningSig.current = learningFieldsSignature({
         learning_level: data.learning_level || 'Beginner',
         learning_goals: data.learning_goals || [],
         weekly_availability_hours: data.weekly_availability_hours ?? '',
         content_format: data.content_format || 'Mixed',
         focus_domains: data.focus_domains || [],
       });
-    } catch (err: any) {
-      setError(err.message || 'Failed to load profile');
+    } catch (err: unknown) {
+      const e = asFetchNetworkError(err instanceof Error ? err : new Error(String(err)));
+      setError(e.message || 'Failed to load profile');
+      const msg = e.message.toLowerCase();
+      if (
+        msg.includes('not authenticated') ||
+        msg.includes('token refresh') ||
+        msg.includes('token has expired') ||
+        msg.includes('invalid token') ||
+        msg.includes('access token required')
+      ) {
+        navigate('/login');
+      }
     } finally {
       setLoading(false);
     }
@@ -164,6 +332,135 @@ const Profile: React.FC = () => {
     });
   };
 
+  useEffect(() => {
+    if (!profile?.id || !isAuthenticated) return;
+    void refreshLearningAndTimeline();
+    const interval = window.setInterval(() => void refreshLearningAndTimeline(), 45_000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshLearningAndTimeline();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [profile?.id, isAuthenticated, refreshLearningAndTimeline]);
+
+  useEffect(() => {
+    if (!profile || !isAuthenticated) return;
+
+    const sig = learningFieldsSignature(formData);
+    if (lastSyncedLearningSig.current === sig) return;
+
+    if (learningSaveTimer.current) clearTimeout(learningSaveTimer.current);
+    learningSaveTimer.current = window.setTimeout(async () => {
+      const token = localStorage.getItem('plpg_access_token');
+      if (!token) return;
+
+      const weeklyRaw = formData.weekly_availability_hours;
+      const weekly =
+        weeklyRaw === '' || weeklyRaw === undefined ? null : Number(weeklyRaw);
+      if (weekly !== null && (Number.isNaN(weekly) || weekly < 0 || weekly > 80)) {
+        setLearningSyncState('error');
+        setLearningSyncMessage('Weekly hours must be between 0 and 80.');
+        return;
+      }
+
+      setLearningSyncState('saving');
+      setLearningSyncMessage('');
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/profile`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            learning_level: formData.learning_level,
+            content_format: formData.content_format,
+            weekly_availability_hours: weekly,
+            learning_goals: formData.learning_goals,
+            focus_domains: formData.focus_domains,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            typeof errorData.detail === 'string' ? errorData.detail : 'Could not save learning preferences',
+          );
+        }
+
+        const data = await response.json();
+        const user = data.user as ProfileData;
+        setProfile(user);
+        setFormData((prev) => ({
+          ...prev,
+          learning_level: user.learning_level,
+          learning_goals: user.learning_goals || [],
+          weekly_availability_hours: user.weekly_availability_hours ?? '',
+          content_format: user.content_format,
+          focus_domains: user.focus_domains || [],
+        }));
+
+        lastSyncedLearningSig.current = learningFieldsSignature({
+          learning_level: user.learning_level,
+          learning_goals: user.learning_goals || [],
+          weekly_availability_hours: user.weekly_availability_hours ?? '',
+          content_format: user.content_format,
+          focus_domains: user.focus_domains || [],
+        });
+
+        setLearningSyncState('saved');
+        const detail = [
+          user.learning_level,
+          user.content_format,
+          `${user.weekly_availability_hours ?? 0}h/wk`,
+          user.learning_goals?.length ? `${user.learning_goals.length} goals` : null,
+          user.focus_domains?.length ? `${user.focus_domains.length} focus areas` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        setLastLearningSyncBanner({ at: new Date(), detail });
+        void refreshLearningAndTimeline();
+        window.setTimeout(() => setLearningSyncState('idle'), 2200);
+      } catch (err: unknown) {
+        setLearningSyncState('error');
+        setLearningSyncMessage(err instanceof Error ? err.message : 'Save failed');
+      }
+    }, 700);
+
+    return () => {
+      if (learningSaveTimer.current) {
+        window.clearTimeout(learningSaveTimer.current);
+        learningSaveTimer.current = null;
+      }
+    };
+  }, [
+    profile,
+    isAuthenticated,
+    formData.learning_level,
+    formData.content_format,
+    formData.weekly_availability_hours,
+    formData.learning_goals,
+    formData.focus_domains,
+    refreshLearningAndTimeline,
+  ]);
+
+  const mergedTimelineRows = useMemo(() => {
+    const rows: TimelineRow[] = [...quizTimelineRows];
+    if (lastLearningSyncBanner) {
+      rows.push({
+        id: 'learning-sync',
+        title: 'Learning profile synced',
+        detail: lastLearningSyncBanner.detail,
+        at: lastLearningSyncBanner.at,
+      });
+    }
+    return rows.sort((a, b) => b.at.getTime() - a.at.getTime()).slice(0, 14);
+  }, [quizTimelineRows, lastLearningSyncBanner]);
+
   const handleSave = async () => {
     try {
       setSaving(true);
@@ -171,9 +468,8 @@ const Profile: React.FC = () => {
       setSuccess('');
 
       const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-      const response = await fetch(`${apiBaseUrl}/profile`, {
+      const response = await fetch(`${API_BASE_URL}/profile`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -192,7 +488,15 @@ const Profile: React.FC = () => {
       }
 
       const data = await response.json();
-      setProfile(data.user);
+      const user = data.user as ProfileData;
+      setProfile(user);
+      lastSyncedLearningSig.current = learningFieldsSignature({
+        learning_level: user.learning_level,
+        learning_goals: user.learning_goals || [],
+        weekly_availability_hours: user.weekly_availability_hours ?? '',
+        content_format: user.content_format,
+        focus_domains: user.focus_domains || [],
+      });
       setIsEditing(false);
       setSuccess('Changes saved.');
       setTimeout(() => setSuccess(''), 2500);
@@ -212,6 +516,13 @@ const Profile: React.FC = () => {
         bio: profile.bio || '',
         location: profile.location || '',
         date_of_birth: profile.date_of_birth ? profile.date_of_birth.split('T')[0] : '',
+        learning_level: profile.learning_level || 'Beginner',
+        learning_goals: profile.learning_goals || [],
+        weekly_availability_hours: profile.weekly_availability_hours ?? '',
+        content_format: profile.content_format || 'Mixed',
+        focus_domains: profile.focus_domains || [],
+      });
+      lastSyncedLearningSig.current = learningFieldsSignature({
         learning_level: profile.learning_level || 'Beginner',
         learning_goals: profile.learning_goals || [],
         weekly_availability_hours: profile.weekly_availability_hours ?? '',
@@ -552,30 +863,73 @@ const Profile: React.FC = () => {
             </section>
 
             <section className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 space-y-6">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Learning Profile</h2>
-                <p className="text-sm text-slate-600 mt-2">Define your level, goals, and focus areas.</p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Learning Profile</h2>
+                  <p className="text-sm text-slate-600 mt-2">
+                    Learning level is set automatically from your quiz scores and volume. Other preferences here still
+                    save instantly — no need to press Save.
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+                  {learningSyncState === 'saving' && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-indigo-500" aria-hidden />
+                      Saving…
+                    </span>
+                  )}
+                  {learningSyncState === 'saved' && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                      Saved to account
+                    </span>
+                  )}
+                  {learningSyncState === 'error' && learningSyncMessage && (
+                    <span className="max-w-xs rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-800">
+                      {learningSyncMessage}
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                {[
-                  { name: 'learning_level', label: 'Learning level', options: ['Beginner', 'Intermediate', 'Advanced'] },
-                  { name: 'content_format', label: 'Content format', options: ['Video', 'Text', 'Projects', 'Mixed'] }
-                ].map((field) => (
-                  <div key={field.name}>
-                    <label className="block text-sm font-semibold text-slate-900 mb-2">{field.label}</label>
-                    <select
-                      value={formData[field.name as keyof typeof formData] as string}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                      disabled={!isEditing}
-                      className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
-                    >
-                      {field.options.map((opt) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
+                <div>
+                  <label className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                    Learning level
+                    <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
+                      System
+                    </span>
+                  </label>
+                  <div className="min-h-[52px] rounded-lg border-2 border-violet-200/90 bg-gradient-to-br from-violet-50/80 to-slate-50 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-base font-bold text-slate-900">{formData.learning_level}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{performanceLearning.detail}</p>
+                      </div>
+                      {timelineLoading && !learningSignalsLoaded ? (
+                        <span className="shrink-0 text-xs font-medium text-violet-700">Analyzing…</span>
+                      ) : null}
+                    </div>
                   </div>
-                ))}
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-900 mb-2">Content format</label>
+                  <select
+                    value={formData.content_format}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        content_format: e.target.value as ProfileData['content_format'],
+                      }))
+                    }
+                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
+                  >
+                    {(['Video', 'Text', 'Projects', 'Mixed'] as const).map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-900 mb-2">Weekly availability (hours)</label>
                   <input
@@ -584,8 +938,7 @@ const Profile: React.FC = () => {
                     max={80}
                     value={formData.weekly_availability_hours}
                     onChange={(e) => setFormData((prev) => ({ ...prev, weekly_availability_hours: e.target.value }))}
-                    disabled={!isEditing}
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
                   />
                 </div>
               </div>
@@ -599,13 +952,12 @@ const Profile: React.FC = () => {
                       <button
                         key={goal}
                         type="button"
-                        disabled={!isEditing}
                         onClick={() => toggleArrayValue('learning_goals', goal)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-105 ${
+                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
                           active
-                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md ring-2 ring-indigo-200/60'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-2 ring-transparent'
+                        }`}
                       >
                         {goal}
                       </button>
@@ -623,13 +975,12 @@ const Profile: React.FC = () => {
                       <button
                         key={domain}
                         type="button"
-                        disabled={!isEditing}
                         onClick={() => toggleArrayValue('focus_domains', domain)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-105 ${
+                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
                           active
-                            ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-md'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        } ${!isEditing ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-md ring-2 ring-emerald-200/60'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-2 ring-transparent'
+                        }`}
                       >
                         {domain}
                       </button>
@@ -667,17 +1018,36 @@ const Profile: React.FC = () => {
                     <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Recent activity</p>
                     <h3 className="text-lg font-bold text-slate-900 mt-1">Learning timeline</h3>
                   </div>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold">🔴 Live</span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
+                      timelineLoading || learningSyncState === 'saving'
+                        ? 'bg-violet-100 text-violet-800'
+                        : 'bg-indigo-100 text-indigo-700'
+                    }`}
+                  >
+                    <span
+                      className={`h-2 w-2 rounded-full ${
+                        timelineLoading || learningSyncState === 'saving' ? 'animate-pulse bg-rose-500' : 'bg-emerald-500'
+                      }`}
+                      aria-hidden
+                    />
+                    Live
+                  </span>
                 </div>
                 <div className="space-y-4">
-                  {activityTimeline.map((item, idx) => (
-                    <div key={idx} className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
-                      <div className="mt-1.5 h-3 w-3 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0"></div>
+                  {mergedTimelineRows.length === 0 && !timelineLoading && (
+                    <p className="text-sm text-slate-500 pl-6">
+                      No activity yet. Finish a quiz or adjust your learning profile — updates appear here in real time.
+                    </p>
+                  )}
+                  {mergedTimelineRows.map((item) => (
+                    <div key={item.id} className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+                      <div className="mt-1.5 h-3 w-3 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0" aria-hidden />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                        <p className="text-xs text-slate-600 mt-0.5">{item.detail}</p>
+                        <p className="text-xs text-slate-600 mt-0.5 break-words">{item.detail}</p>
                       </div>
-                      <p className="text-xs text-slate-500 flex-shrink-0">{item.time}</p>
+                      <p className="text-xs text-slate-500 flex-shrink-0 tabular-nums">{formatRelativeTime(item.at)}</p>
                     </div>
                   ))}
                 </div>

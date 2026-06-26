@@ -197,8 +197,7 @@ def verify_user_token(token: str, is_refresh: bool = False) -> Dict[str, Any] | 
         
         return decoded
     except jwt.ExpiredSignatureError:
-        logger.debug("Token expired")
-        return None
+        raise
     except jwt.InvalidTokenError as e:
         logger.debug(f"Invalid token: {e}")
         return None

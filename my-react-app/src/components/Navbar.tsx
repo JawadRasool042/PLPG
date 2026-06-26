@@ -1,453 +1,546 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  LayoutDashboard,
+  Compass,
+  ClipboardList,
+  History,
+  Map,
+  Notebook,
+  MessageSquare,
+  Lightbulb,
+  User,
+  Settings,
+  LogOut,
+  ChevronDown,
+  Menu,
+  X,
+  Bell,
+  BookOpen,
+  type LucideIcon,
+} from 'lucide-react';
 import { useStore } from '../store/useStore';
+import { cn } from '../lib/utils';
+
+type NavItem = { to: string; label: string; shortLabel: string; icon: LucideIcon };
+
+const PUBLIC_LINKS: [string, string][] = [
+  ['/', 'Home'],
+  ['/features', 'Features'],
+  ['/about', 'About'],
+  ['/contact', 'Contact'],
+];
+
+const APP_NAV_ITEMS: NavItem[] = [
+  { to: '/quizzes/interest-check', label: 'Interest Check', shortLabel: 'Interest', icon: Compass },
+  { to: '/quizzes', label: 'Quiz Hub', shortLabel: 'Quizzes', icon: ClipboardList },
+  { to: '/quizzes/recent', label: 'Recent Quizzes', shortLabel: 'Recent', icon: History },
+  { to: '/learning-path', label: 'Learning Path', shortLabel: 'Path', icon: Map },
+  { to: '/notes', label: 'Notes', shortLabel: 'Notes', icon: Notebook },
+  { to: '/chat', label: 'Messages & Community', shortLabel: 'Community', icon: MessageSquare },
+  { to: '/feedback', label: 'Feedback', shortLabel: 'Feedback', icon: Lightbulb },
+];
+
+const PROFILE_LINKS: NavItem[] = [
+  { to: '/dashboard', label: 'Dashboard', shortLabel: 'Dashboard', icon: LayoutDashboard },
+  { to: '/profile', label: 'Profile', shortLabel: 'Profile', icon: User },
+  { to: '/settings', label: 'Settings', shortLabel: 'Settings', icon: Settings },
+];
+
+const spring = { type: 'spring' as const, stiffness: 420, damping: 32 };
+const easeOut = [0.22, 1, 0.36, 1] as const;
+
+type Notification = { id: string; title: string; body: string; to: string };
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAuthenticated, logout } = useStore();
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, isAuthenticated, logout, userInterests } = useStore();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const isActive = useCallback(
+    (path: string) => {
+      const current = location.pathname;
+      if (path === '/') return current === '/';
+      if (path === '/quizzes') {
+        return current === '/quizzes' || current.startsWith('/quiz/') || current === '/ai-quiz';
+      }
+      if (path.startsWith('/quizzes/')) {
+        return current === path || current.startsWith(`${path}/`);
+      }
+      return current === path || current.startsWith(`${path}/`);
+    },
+    [location.pathname],
+  );
+
+  const activePublicPath = useMemo(
+    () => PUBLIC_LINKS.find(([to]) => isActive(to))?.[0] ?? null,
+    [isActive],
+  );
+
+  const notifications = useMemo((): Notification[] => {
+    if (!isAuthenticated) return [];
+    const items: Notification[] = [];
+    if (!userInterests?.primaryInterest) {
+      items.push({
+        id: 'interest',
+        title: 'Complete interest assessment',
+        body: 'Unlock your personalized learning path.',
+        to: '/quizzes/interest-check',
+      });
+    }
+    items.push({
+      id: 'quiz',
+      title: 'Practice in Quiz Hub',
+      body: 'Take a quiz to refresh your recommendations.',
+      to: '/quizzes',
+    });
+    items.push({
+      id: 'path',
+      title: 'Review learning path',
+      body: 'Check updated courses and roadmap milestones.',
+      to: '/learning-path',
+    });
+    return items;
+  }, [isAuthenticated, userInterests?.primaryInterest]);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setIsProfileOpen(false);
+    const onScroll = () => setScrolled(window.scrollY > 6);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (profileRef.current && !profileRef.current.contains(t)) setProfileOpen(false);
+      if (notifRef.current && !notifRef.current.contains(t)) setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setProfileOpen(false);
+        setNotifOpen(false);
+        setMobileOpen(false);
       }
     };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
+
+  useEffect(() => {
+    setProfileOpen(false);
+    setNotifOpen(false);
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       await logout();
       navigate('/');
-    } catch (error) {
-      console.error('Logout error:', error);
+    } catch (e) {
+      console.error('Logout error:', e);
     } finally {
       setIsLoggingOut(false);
     }
   };
 
-  const getUserDisplayName = () => {
-    if (user?.firstName && user?.lastName) {
-      return `${user.firstName} ${user.lastName}`;
-    }
-    if (user?.firstName) {
-      return user.firstName;
-    }
-    return user?.email?.split('@')[0] || 'User';
+  const displayName = () => {
+    if (user?.firstName && user?.lastName) return `${user.firstName} ${user.lastName}`;
+    if (user?.firstName) return user.firstName;
+    return user?.email?.split('@')[0] || 'Student';
   };
 
-  const getUserInitials = () => {
-    if (user?.firstName && user?.lastName) {
+  const initials = () => {
+    if (user?.firstName && user?.lastName)
       return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
-    }
-    if (user?.firstName) {
-      return user.firstName.charAt(0).toUpperCase();
-    }
-    return user?.email?.charAt(0).toUpperCase() || 'U';
+    if (user?.firstName) return user.firstName.charAt(0).toUpperCase();
+    return user?.email?.charAt(0).toUpperCase() || 'S';
+  };
+
+  const renderNavPill = (
+    item: NavItem,
+    layoutGroup: string,
+    onClick?: () => void,
+  ) => {
+    const Icon = item.icon;
+    const active = isActive(item.to);
+    return (
+      <Link
+        key={item.to}
+        to={item.to}
+        onClick={onClick}
+        title={item.label}
+        aria-current={active ? 'page' : undefined}
+        className={cn('nav-pill-link group', active && 'nav-pill-link--active')}
+      >
+        {active && (
+          <motion.span
+            layoutId={`${layoutGroup}-active-pill`}
+            className="nav-pill-active"
+            transition={spring}
+          />
+        )}
+        <motion.span
+          className="nav-pill-icon-wrap"
+          whileHover={{ y: -2 }}
+          transition={{ duration: 0.18 }}
+        >
+          <Icon className="nav-pill-icon" strokeWidth={2} aria-hidden />
+        </motion.span>
+        <span className="nav-pill-label">{item.shortLabel}</span>
+      </Link>
+    );
+  };
+
+  const renderPublicPill = (to: string, label: string, onClick?: () => void) => {
+    const active = isActive(to);
+    return (
+      <Link
+        key={to}
+        to={to}
+        onClick={onClick}
+        aria-current={active ? 'page' : undefined}
+        className={cn('nav-pill-link group', active && 'nav-pill-link--active')}
+      >
+        {active && (
+          <motion.span
+            layoutId="public-active-pill"
+            className="nav-pill-active"
+            transition={spring}
+          />
+        )}
+        <span className="nav-pill-label px-0.5">{label}</span>
+      </Link>
+    );
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 w-full bg-white/95 backdrop-blur-md border-b border-gray-200 z-50 shadow-sm transition-all duration-300 hover:shadow-md">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Left Section: Logo and Navigation Links */}
-          <div className="flex items-center gap-8">
-            {/* Logo */}
-            <Link to="/" className="group flex items-center space-x-2 transition-all duration-200" aria-label="PLPG Home">
-              <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center transform group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-sm group-hover:shadow-md" role="img" aria-label="PLPG Logo">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2} aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-              <span className="text-xl font-semibold text-gray-900 hidden sm:block group-hover:text-indigo-600 transition-colors duration-200">
-                PLPG
-              </span>
-            </Link>
+    <motion.header
+      className={cn('nav-shell', scrolled && 'nav-shell--scrolled')}
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: easeOut }}
+    >
+      <nav className="nav-bar" aria-label="Main navigation">
+        <div className="nav-inner">
+          {/* Brand */}
+          <Link to={isAuthenticated ? '/dashboard' : '/'} className="nav-brand group" aria-label="PLPG home">
+            <motion.span
+              className="nav-logo"
+              whileHover={{ rotate: 4, scale: 1.04 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 18 }}
+            >
+              <BookOpen className="h-[1.05rem] w-[1.05rem]" strokeWidth={2.25} />
+            </motion.span>
+            <span className="nav-brand-name">PLPG</span>
+          </Link>
 
-            {/* Desktop Navigation Links */}
-            <div className="hidden lg:flex items-center space-x-8">
-              <Link
-                to="/"
-                className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/'
-                    ? 'text-indigo-600'
-                    : 'text-gray-700 hover:text-indigo-600'
-                  } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-              >
-                Home
-              </Link>
-              <Link
-                to="/features"
-                className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/features'
-                    ? 'text-indigo-600'
-                    : 'text-gray-700 hover:text-indigo-600'
-                  } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/features' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-              >
-                Features
-              </Link>
-              <Link
-                to="/about"
-                className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/about'
-                    ? 'text-indigo-600'
-                    : 'text-gray-700 hover:text-indigo-600'
-                  } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/about' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-              >
-                About
-              </Link>
-              <Link
-                to="/contact"
-                className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/contact'
-                    ? 'text-indigo-600'
-                    : 'text-gray-700 hover:text-indigo-600'
-                  } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/contact' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-              >
-                Contact
-              </Link>
-              <Link
-                to="/interest-check"
-                className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/interest-check'
-                    ? 'text-indigo-600'
-                    : 'text-gray-700 hover:text-indigo-600'
-                  } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/interest-check' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-              >
-                Interest Check
-              </Link>
-              {isAuthenticated && (
-                <>
-                  <Link
-                    to="/quizzes"
-                    className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/quizzes'
-                        ? 'text-indigo-600'
-                        : 'text-gray-700 hover:text-indigo-600'
-                      } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/quizzes' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-                  >
-                    Quizzes
-                  </Link>
-                  <Link
-                    to="/learning-path"
-                    className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/learning-path'
-                        ? 'text-indigo-600'
-                        : 'text-gray-700 hover:text-indigo-600'
-                      } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/learning-path' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-                  >
-                    My Path
-                  </Link>
-                  <Link
-                    to="/notes"
-                    className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/notes'
-                        ? 'text-indigo-600'
-                        : 'text-gray-700 hover:text-indigo-600'
-                      } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/notes' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-                  >
-                    Notes
-                  </Link>
-                  <Link
-                    to="/chat"
-                    className={`relative text-sm font-medium transition-colors duration-200 ${location.pathname === '/chat'
-                        ? 'text-indigo-600'
-                        : 'text-gray-700 hover:text-indigo-600'
-                      } after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-indigo-600 after:transition-all after:duration-300 ${location.pathname === '/chat' ? 'after:w-full' : 'after:w-0 hover:after:w-full'}`}
-                  >
-                    Inbox
-                  </Link>
-                </>
-              )}
+          {/* Center — public or app navigation */}
+          {!isAuthenticated && (
+            <div className="nav-center hidden md:flex" aria-label="Website">
+              <div className="nav-pill-track">
+                {PUBLIC_LINKS.map(([to, label]) => renderPublicPill(to, label))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Right Section: Auth Buttons or User Menu */}
-          <div className="flex items-center gap-4">
-            {!isAuthenticated ? (
-              <div className="hidden sm:flex items-center gap-3">
-                <Link
-                  to="/login"
-                  className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="inline-flex items-center justify-center px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-700 hover:border-indigo-700 shadow-sm hover:shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  Register
-                </Link>
+          {isAuthenticated && (
+            <div className="nav-center hidden lg:flex" aria-label="App pages">
+              <div className="nav-pill-track nav-pill-track--app">
+                {APP_NAV_ITEMS.map((item) => renderNavPill(item, 'app'))}
               </div>
-            ) : (
-              <div className="relative" ref={profileRef}>
-                <button
-                  onClick={() => setIsProfileOpen(!isProfileOpen)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 transition-all duration-200 group"
-                  aria-label="User menu"
-                  aria-expanded={isProfileOpen}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm group-hover:shadow-md transition-all duration-200">
-                      <span className="text-sm font-semibold text-white">
-                        {getUserInitials()}
-                      </span>
-                    </div>
-                    <div className="hidden lg:flex flex-col items-start">
-                      <span className="text-sm font-semibold text-gray-900">
-                        {getUserDisplayName()}
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {user?.role || 'Student'}
-                      </span>
-                    </div>
-                  </div>
-                  <svg
-                    className={`hidden lg:block w-5 h-5 text-gray-400 transition-transform duration-200 ${isProfileOpen ? 'rotate-180' : ''}`}
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+            </div>
+          )}
+
+          {/* Right */}
+          <div className="nav-actions">
+            {isAuthenticated ? (
+              <>
+                <div className="relative" ref={notifRef}>
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => setNotifOpen((o) => !o)}
+                    className={cn('nav-icon-btn', notifOpen && 'nav-icon-btn--active')}
+                    aria-label={`Notifications${notifications.length ? `, ${notifications.length} items` : ''}`}
+                    aria-expanded={notifOpen}
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
+                    <Bell className="h-[18px] w-[18px]" strokeWidth={2} />
+                    {notifications.length > 0 && (
+                      <span className="nav-notif-dot">{notifications.length > 9 ? '9+' : notifications.length}</span>
+                    )}
+                  </motion.button>
 
-                {/* Dropdown Menu */}
-                {isProfileOpen && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                    {/* User Info Section */}
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center shadow-sm">
-                          <span className="text-base font-semibold text-white">
-                            {getUserInitials()}
-                          </span>
+                  <AnimatePresence>
+                    {notifOpen && (
+                      <motion.div
+                        className="nav-dropdown nav-dropdown--notif"
+                        role="menu"
+                        initial={{ opacity: 0, scale: 0.96, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: -4 }}
+                        transition={{ duration: 0.18, ease: easeOut }}
+                      >
+                        <p className="nav-dropdown-heading">Notifications</p>
+                        <ul className="nav-notif-list">
+                          {notifications.map((n) => (
+                            <li key={n.id}>
+                              <Link
+                                to={n.to}
+                                onClick={() => setNotifOpen(false)}
+                                className="nav-notif-item"
+                              >
+                                <p className="font-medium text-foreground">{n.title}</p>
+                                <p className="mt-0.5 text-xs text-muted-foreground">{n.body}</p>
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="relative" ref={profileRef}>
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => setProfileOpen((o) => !o)}
+                    className={cn('nav-profile', profileOpen && 'nav-profile--open')}
+                    aria-expanded={profileOpen}
+                    aria-haspopup="true"
+                    aria-label="Account menu"
+                  >
+                    <motion.span
+                      className="nav-avatar"
+                      whileHover={{ scale: 1.05, boxShadow: '0 4px 14px rgba(15,23,42,0.12)' }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {initials()}
+                    </motion.span>
+                    <span className="nav-profile-text hidden xl:block">
+                      <span className="nav-profile-name">{displayName()}</span>
+                      <span className="nav-profile-role">{user?.role || 'Student'}</span>
+                    </span>
+                    <ChevronDown
+                      className={cn('nav-chevron hidden xl:block', profileOpen && 'rotate-180')}
+                      strokeWidth={2}
+                    />
+                  </motion.button>
+
+                  <AnimatePresence>
+                    {profileOpen && (
+                      <motion.div
+                        className="nav-dropdown nav-dropdown--profile"
+                        role="menu"
+                        initial={{ opacity: 0, scale: 0.96, y: -4 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.96, y: -4 }}
+                        transition={{ duration: 0.18, ease: easeOut }}
+                      >
+                        <div className="nav-dropdown-user">
+                          <span className="nav-avatar">{initials()}</span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">{displayName()}</p>
+                            <p className="truncate text-xs text-muted-foreground">{user?.email}</p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">
-                            {getUserDisplayName()}
-                          </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {user?.email}
-                          </p>
+                        <div className="py-1">
+                          {PROFILE_LINKS.map((item) => {
+                            const Icon = item.icon;
+                            const active = isActive(item.to);
+                            return (
+                              <Link
+                                key={item.to}
+                                to={item.to}
+                                onClick={() => setProfileOpen(false)}
+                                className={cn('nav-menu-item', active && 'nav-menu-item--active')}
+                              >
+                                <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                                {item.label}
+                              </Link>
+                            );
+                          })}
                         </div>
-                      </div>
-                    </div>
-
-                    {/* Menu Items */}
-                    <div className="py-2">
-                      <Link
-                        to="/dashboard"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                        </svg>
-                        <span className="font-medium">Dashboard</span>
-                      </Link>
-
-                      <Link
-                        to="/quizzes"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        <span className="font-medium">My Quizzes</span>
-                      </Link>
-
-                      <Link
-                        to="/chat"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                        <span className="font-medium">Inbox</span>
-                      </Link>
-
-                      <Link
-                        to="/profile"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <span className="font-medium">My Profile</span>
-                      </Link>
-
-                      <Link
-                        to="/settings"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span className="font-medium">Settings</span>
-                      </Link>
-
-                      <Link
-                        to="/#contact"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
-                      >
-                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <span className="font-medium">Help & Support</span>
-                      </Link>
-                    </div>
-
-                    {/* Sign Out Section */}
-                    <div className="border-t border-gray-100 pt-2">
-                      <button
-                        onClick={() => {
-                          setIsProfileOpen(false);
-                          handleLogout();
-                        }}
-                        disabled={isLoggingOut}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                        </svg>
-                        <span className="font-medium">
-                          {isLoggingOut ? 'Signing out...' : 'Sign out'}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                )}
+                        <div className="border-t border-border/80 pt-1">
+                          <button
+                            type="button"
+                            disabled={isLoggingOut}
+                            onClick={() => {
+                              setProfileOpen(false);
+                              void handleLogout();
+                            }}
+                            className="nav-menu-item nav-menu-item--danger w-full text-left"
+                          >
+                            <LogOut className="h-4 w-4 shrink-0" strokeWidth={2} />
+                            {isLoggingOut ? 'Signing out…' : 'Sign out'}
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
+            ) : (
+              <div className="hidden items-center gap-2 sm:flex">
+                <Link to="/login" className="nav-ghost-btn">
+                  Log in
+                </Link>
+                <Link to="/register" className="nav-primary-btn">
+                  Get started
+                </Link>
               </div>
             )}
 
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="lg:hidden p-2 rounded-lg text-slate-800 hover:bg-slate-100 transition-colors duration-200"
-              aria-label="Toggle menu"
+            <motion.button
+              type="button"
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setMobileOpen((o) => !o)}
+              className={cn('nav-icon-btn', isAuthenticated ? 'lg:hidden' : 'md:hidden')}
+              aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileOpen}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                {isMenuOpen ? (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                ) : (
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                )}
-              </svg>
-            </button>
+              {mobileOpen ? <X className="h-5 w-5" strokeWidth={2} /> : <Menu className="h-5 w-5" strokeWidth={2} />}
+            </motion.button>
           </div>
         </div>
+      </nav>
 
-        {/* Mobile Menu */}
-        {isMenuOpen && (
-          <div className="sm:hidden py-4 border-t border-slate-200 animate-in slide-in-from-top">
-            <div className="flex flex-col gap-3">
-              <Link
-                to="/"
-                onClick={() => setIsMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/'
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                Home
-              </Link>
-              <Link
-                to="/features"
-                onClick={() => setIsMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/features'
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                Features
-              </Link>
-              <Link
-                to="/about"
-                onClick={() => setIsMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/about'
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                About
-              </Link>
-              <Link
-                to="/contact"
-                onClick={() => setIsMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/contact'
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                Contact
-              </Link>
-              <Link
-                to="/interest-check"
-                onClick={() => setIsMenuOpen(false)}
-                className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/interest-check'
-                    ? 'bg-indigo-50 text-indigo-600'
-                    : 'text-slate-800 hover:bg-slate-50'
-                  }`}
-              >
-                Interest Check
-              </Link>
-              {isAuthenticated && (
-                <>
-                  <Link
-                    to="/quizzes"
-                    onClick={() => setIsMenuOpen(false)}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/quizzes'
-                        ? 'bg-indigo-50 text-indigo-600'
-                        : 'text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    Quizzes
-                  </Link>
-                  <Link
-                    to="/chat"
-                    onClick={() => setIsMenuOpen(false)}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all duration-200 ${location.pathname === '/chat'
-                        ? 'bg-indigo-50 text-indigo-600'
-                        : 'text-slate-700 hover:bg-slate-50'
-                      }`}
-                  >
-                    Inbox
-                  </Link>
-                </>
+      {/* Mobile drawer */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <>
+            <motion.button
+              type="button"
+              className="nav-drawer-backdrop"
+              aria-label="Close menu"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileOpen(false)}
+            />
+            <motion.aside
+              className="nav-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Navigation menu"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={spring}
+            >
+              {!isAuthenticated ? (
+                <motion.div
+                  initial="hidden"
+                  animate="show"
+                  variants={{
+                    hidden: {},
+                    show: { transition: { staggerChildren: 0.04 } },
+                  }}
+                >
+                  <p className="nav-drawer-label">Explore</p>
+                  {PUBLIC_LINKS.map(([to, label]) => (
+                    <motion.div key={to} variants={{ hidden: { opacity: 0, x: 12 }, show: { opacity: 1, x: 0 } }}>
+                      <Link
+                        to={to}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn('nav-drawer-link', activePublicPath === to && 'nav-drawer-link--active')}
+                      >
+                        {label}
+                      </Link>
+                    </motion.div>
+                  ))}
+                  <div className="mt-6 flex flex-col gap-2 border-t border-border pt-4">
+                    <Link to="/login" onClick={() => setMobileOpen(false)} className="nav-ghost-btn w-full justify-center">
+                      Log in
+                    </Link>
+                    <Link to="/register" onClick={() => setMobileOpen(false)} className="nav-primary-btn w-full justify-center">
+                      Get started
+                    </Link>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  initial="hidden"
+                  animate="show"
+                  variants={{
+                    hidden: {},
+                    show: { transition: { staggerChildren: 0.035 } },
+                  }}
+                >
+                  <p className="nav-drawer-label">Navigate</p>
+                  {APP_NAV_ITEMS.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.to);
+                    return (
+                      <motion.div key={item.to} variants={{ hidden: { opacity: 0, x: 12 }, show: { opacity: 1, x: 0 } }}>
+                        <Link
+                          to={item.to}
+                          onClick={() => setMobileOpen(false)}
+                          className={cn('nav-drawer-link nav-drawer-link--icon', active && 'nav-drawer-link--active')}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                          {item.label}
+                        </Link>
+                      </motion.div>
+                    );
+                  })}
+                  <p className="nav-drawer-label mt-6">Account</p>
+                  {PROFILE_LINKS.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <motion.div key={item.to} variants={{ hidden: { opacity: 0, x: 12 }, show: { opacity: 1, x: 0 } }}>
+                        <Link
+                          to={item.to}
+                          onClick={() => setMobileOpen(false)}
+                          className="nav-drawer-link nav-drawer-link--icon"
+                        >
+                          <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                          {item.label}
+                        </Link>
+                      </motion.div>
+                    );
+                  })}
+                  <motion.div variants={{ hidden: { opacity: 0, x: 12 }, show: { opacity: 1, x: 0 } }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        void handleLogout();
+                      }}
+                      className="nav-drawer-link nav-drawer-link--icon nav-drawer-link--danger w-full text-left"
+                    >
+                      <LogOut className="h-4 w-4 shrink-0" strokeWidth={2} />
+                      Sign out
+                    </button>
+                  </motion.div>
+                </motion.div>
               )}
-
-              {/* Mobile Auth Actions */}
-              {!isAuthenticated && (
-                <div className="pt-3 border-t border-gray-200 flex flex-col gap-3">
-                  <Link
-                    to="/login"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="px-4 py-2.5 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg transition-all duration-200 hover:bg-gray-50 hover:border-gray-400 text-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Login
-                  </Link>
-                  <Link
-                    to="/register"
-                    onClick={() => setIsMenuOpen(false)}
-                    className="px-4 py-2.5 text-sm font-semibold text-white bg-indigo-600 border border-indigo-600 rounded-lg shadow-sm transition-all duration-200 hover:bg-indigo-700 hover:border-indigo-700 hover:shadow text-center active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Register
-                  </Link>
-                </div>
-              )}
-            </div>
-          </div>
+            </motion.aside>
+          </>
         )}
-      </div>
-    </nav>
+      </AnimatePresence>
+    </motion.header>
   );
 };
 
 export default Navbar;
-

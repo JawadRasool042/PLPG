@@ -5,35 +5,56 @@ interface StatCardProps {
   label: string;
   value: string | number;
   trend?: string;
+  trendDirection?: 'up' | 'down' | 'neutral';
   icon?: React.ReactNode;
-  accent?: 'indigo' | 'emerald' | 'amber' | 'rose';
+  accent?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'slate';
 }
 
-const accentMap: Record<NonNullable<StatCardProps['accent']>, string> = {
-  indigo: 'bg-indigo-50 border-indigo-100',
-  emerald: 'bg-emerald-50 border-emerald-100',
-  amber: 'bg-amber-50 border-amber-100',
-  rose: 'bg-rose-50 border-rose-100',
+const iconRingMap: Record<NonNullable<StatCardProps['accent']>, string> = {
+  indigo: 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100',
+  emerald: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100',
+  amber: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100',
+  rose: 'bg-rose-50 text-rose-600 ring-1 ring-rose-100',
+  slate: 'bg-slate-50 text-slate-600 ring-1 ring-slate-200',
 };
 
-const iconColorMap: Record<NonNullable<StatCardProps['accent']>, string> = {
-  indigo: 'text-indigo-600',
-  emerald: 'text-emerald-600',
-  amber: 'text-amber-600',
-  rose: 'text-rose-600',
+const trendColorMap: Record<NonNullable<StatCardProps['trendDirection']>, string> = {
+  up: 'text-emerald-600',
+  down: 'text-rose-600',
+  neutral: 'text-slate-500',
 };
 
-const StatCard: React.FC<StatCardProps> = ({ label, value, trend, icon, accent = 'indigo' }) => {
+const StatCard: React.FC<StatCardProps> = ({
+  label,
+  value,
+  trend,
+  trendDirection = 'neutral',
+  icon,
+  accent = 'indigo',
+}) => {
   return (
-    <div className={clsx('rounded-2xl border-2 bg-white p-6 shadow-sm hover:shadow-md transition-all', accentMap[accent])}>
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-slate-600">{label}</p>
-          <p className="text-3xl font-bold text-slate-900 mt-2">{value}</p>
-          {trend && <p className="text-xs text-slate-500 mt-2">{trend}</p>}
+    <div className="group relative rounded-xl border border-slate-200 bg-white p-5 shadow-xs hover:shadow-md hover:border-slate-300 transition-all duration-200">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">
+            {label}
+          </p>
+          <p className="text-2xl sm:text-[28px] font-semibold text-slate-900 mt-2 tracking-tight tabular-nums leading-none">
+            {value}
+          </p>
+          {trend && (
+            <p className={clsx('text-xs font-medium mt-2.5', trendColorMap[trendDirection])}>
+              {trend}
+            </p>
+          )}
         </div>
         {icon && (
-          <div className={clsx('h-12 w-12 rounded-xl bg-white/80 flex items-center justify-center shadow-inner', iconColorMap[accent])}>
+          <div
+            className={clsx(
+              'h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105',
+              iconRingMap[accent]
+            )}
+          >
             {icon}
           </div>
         )}

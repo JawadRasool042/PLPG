@@ -1,8 +1,15 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import type { InterestDomain, InterestScores, AnalysisResponse } from '../../services/interestService';
 import { submitInterestAssessment, checkInterestApiHealth, resolveTie } from '../../services/interestService';
+import {
+  buildAllInterestsFromSlidersAndRanked,
+  collectAssessmentTags,
+  getPercentage,
+  primaryStrengthFromSliders,
+} from '../../utils/interestDisplay';
+import { parseApiError } from '../../services/apiError';
 
 // ===================================================================
 // Constants & Types
@@ -43,22 +50,44 @@ const DOMAIN_COLORS: Record<InterestDomain, string> = {
   'Physical Games / Sports': 'from-emerald-500 to-emerald-600',
 };
 
-const defaultScores: InterestScores = {
-  Coding: 5,
-  'Web Development': 5,
-  'Game Development': 5,
-  Cybersecurity: 5,
-  'Data Science': 5,
-  'Mobile Development': 5,
-  'Cloud Computing': 5,
-  'AI & Machine Learning': 5,
-  'Physical Games / Sports': 5,
-};
+/** Default each domain to 0/10 until the learner moves a slider. */
+const defaultScores: InterestScores = DOMAINS.reduce(
+  (acc, d) => ({ ...acc, [d]: 0 }),
+  {} as InterestScores,
+);
+
+const KNOWN_TAGS = [
+  'HTML/CSS',
+  'Bootstrap',
+  'JavaScript',
+  'Python Basics',
+  'React Basics',
+  'Git/GitHub',
+  'SQL Basics',
+  'Networking Fundamentals',
+];
+
+const WANT_TAGS = [
+  'Python',
+  'React',
+  'Node.js APIs',
+  'Cybersecurity Basics',
+  'Data Science',
+  'Cloud Computing',
+  'Game Development',
+  'Machine Learning',
+];
 
 interface FormErrors {
   name?: string;
   email?: string;
   interests?: string;
+}
+
+interface DomainInteractionMetric {
+  sliderChanges: number;
+  firstInteractionAt: number | null;
+  lastInteractionAt: number | null;
 }
 
 // ===================================================================
@@ -69,44 +98,80 @@ interface StepIndicatorProps {
   totalSteps: number;
 }
 
-const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep }) => {
+const StepIndicator: React.FC<StepIndicatorProps> = ({ currentStep, totalSteps }) => {
   const steps = [
     { num: 1, label: 'Personal Info' },
     { num: 2, label: 'Rate Interests' },
     { num: 3, label: 'Get Results' },
   ];
 
+  const stateClass = (stepNum: number) => {
+    if (currentStep === stepNum) return 'bg-indigo-600 text-white ring-4 ring-indigo-200 shadow-md scale-110';
+    if (currentStep > stepNum) return 'bg-emerald-600 text-white';
+    return 'bg-slate-200 text-slate-500';
+  };
+
+  const connectorClass = (afterStepNum: number) => {
+    if (currentStep > afterStepNum) return 'bg-indigo-600';
+    if (currentStep === afterStepNum) return 'bg-gradient-to-r from-indigo-600 to-slate-200';
+    return 'bg-slate-200';
+  };
+
   return (
-    <div className="flex items-center justify-center mb-8">
-      {steps.map((step, idx) => (
-        <React.Fragment key={step.num}>
-          <div className="flex flex-col items-center">
-            <div
-              className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${currentStep >= step.num
-                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
-                  : 'bg-slate-200 text-slate-500'
+    <div className="mb-8">
+      <div className="flex justify-center mb-4">
+        <span
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-900 text-white text-xs font-bold tracking-wide uppercase"
+          aria-current="step"
+        >
+          Step {currentStep} of {totalSteps}
+          <span className="font-normal normal-case text-white/80">
+            — {steps.find((s) => s.num === currentStep)?.label}
+          </span>
+        </span>
+      </div>
+      <div className="flex items-center justify-center">
+        {steps.map((step, idx) => (
+          <React.Fragment key={step.num}>
+            <div className="flex flex-col items-center max-w-[110px]">
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${stateClass(step.num)}`}
+              >
+                {currentStep > step.num ? (
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  step.num
+                )}
+              </div>
+              <span
+                className={`mt-2 text-xs font-semibold text-center leading-tight ${currentStep === step.num ? 'text-indigo-700' : currentStep > step.num ? 'text-emerald-700' : 'text-slate-400'
+                  }`}
+              >
+                {step.label}
+              </span>
+              <span
+                className={`mt-1 text-[10px] font-bold uppercase tracking-wide text-center ${
+                  currentStep > step.num
+                    ? 'text-emerald-600'
+                    : currentStep === step.num
+                      ? 'text-indigo-600'
+                      : 'text-slate-400'
                 }`}
-            >
-              {currentStep > step.num ? (
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                step.num
-              )}
+              >
+                {currentStep > step.num ? 'Completed' : currentStep === step.num ? 'Current step' : 'Pending'}
+              </span>
             </div>
-            <span className={`mt-2 text-xs font-medium ${currentStep >= step.num ? 'text-indigo-600' : 'text-slate-400'}`}>
-              {step.label}
-            </span>
-          </div>
-          {idx < steps.length - 1 && (
-            <div
-              className={`w-16 sm:w-24 h-1 mx-2 rounded-full transition-all duration-300 ${currentStep > step.num ? 'bg-indigo-600' : 'bg-slate-200'
-                }`}
-            />
-          )}
-        </React.Fragment>
-      ))}
+            {idx < steps.length - 1 && (
+              <div
+                className={`w-12 sm:w-20 h-1.5 mx-1 sm:mx-2 rounded-full transition-all duration-300 ${connectorClass(step.num)}`}
+                aria-hidden
+              />
+            )}
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 };
@@ -172,6 +237,58 @@ const HowItWorksPanel: React.FC = () => {
 };
 
 // ===================================================================
+// Interest Check completion roadmap (sidebar)
+// ===================================================================
+interface CompletionRoadmapPanelProps {
+  currentStep: number;
+}
+
+const CompletionRoadmapPanel: React.FC<CompletionRoadmapPanelProps> = ({ currentStep }) => {
+  const items = [
+    { step: 1, title: 'Personal details', body: 'Name, email, optional skill tags (what you know / want to learn).' },
+    { step: 2, title: 'Rate domains', body: 'Move at least one slider above 0 so the model can rank interests.' },
+    { step: 3, title: 'Results & save', body: 'Primary interest and recommendations are stored on your profile when analysis succeeds.' },
+  ];
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+      <h3 className="font-bold text-slate-900 mb-1 flex items-center gap-2">
+        <span className="text-lg">🗺️</span> Interest Check roadmap
+      </h3>
+      <p className="text-xs text-slate-600 mb-4">
+        Follow these steps to unlock personalized quizzes and your learning path.{' '}
+        <span className="font-semibold text-slate-800">Learning goals</span> in step 1 (or later in Settings) are{' '}
+        <span className="font-semibold text-indigo-700">optional</span> — they refine recommendations but do not block quizzes or path generation.
+      </p>
+      <ol className="space-y-3">
+        {items.map((item) => {
+          const done = currentStep > item.step;
+          const active = currentStep === item.step;
+          return (
+            <li
+              key={item.step}
+              className={`flex gap-3 rounded-xl border px-3 py-2.5 text-sm ${active ? 'border-indigo-300 bg-indigo-50/80' : done ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-100 bg-slate-50'
+                }`}
+            >
+              <span
+                className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${active ? 'bg-indigo-600 text-white' : done ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-600'
+                  }`}
+              >
+                {done ? '✓' : item.step}
+              </span>
+              <div>
+                <p className="font-semibold text-slate-900">{item.title}</p>
+                <p className="text-xs text-slate-600 mt-0.5">{item.body}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+};
+
+// ===================================================================
 // Interest Slider Component
 // ===================================================================
 interface InterestSliderProps {
@@ -182,11 +299,12 @@ interface InterestSliderProps {
 
 const InterestSlider: React.FC<InterestSliderProps> = ({ domain, value, onChange }) => {
   const getValueLabel = (val: number) => {
-    if (val <= 2) return 'Not Interested';
-    if (val <= 4) return 'Slightly Interested';
-    if (val <= 6) return 'Moderately Interested';
-    if (val <= 8) return 'Very Interested';
-    return 'Passionate';
+    if (val === 0) return 'No interest (default)';
+    if (val <= 2) return 'Low interest';
+    if (val <= 4) return 'Slightly interested';
+    if (val <= 6) return 'Moderately interested';
+    if (val <= 8) return 'Very interested';
+    return 'Strong interest';
   };
 
   return (
@@ -199,6 +317,7 @@ const InterestSlider: React.FC<InterestSliderProps> = ({ domain, value, onChange
         <div className="flex items-center gap-2">
           <span className={`text-xs px-2 py-1 rounded-full ${value >= 7 ? 'bg-green-100 text-green-700' :
               value >= 4 ? 'bg-yellow-100 text-yellow-700' :
+                value === 0 ? 'bg-slate-100 text-slate-500 border border-slate-200' :
                 'bg-slate-100 text-slate-600'
             }`}>
             {getValueLabel(value)}
@@ -211,7 +330,7 @@ const InterestSlider: React.FC<InterestSliderProps> = ({ domain, value, onChange
       <div className="relative">
         <input
           type="range"
-          min={1}
+          min={0}
           max={10}
           step={1}
           value={value}
@@ -223,7 +342,7 @@ const InterestSlider: React.FC<InterestSliderProps> = ({ domain, value, onChange
             [&::-webkit-slider-thumb]:hover:bg-indigo-700 [&::-webkit-slider-thumb]:transition-colors"
         />
         <div className="flex justify-between text-[10px] text-slate-400 mt-1 px-1">
-          <span>1</span>
+          <span>0</span>
           <span>5</span>
           <span>10</span>
         </div>
@@ -237,13 +356,37 @@ const InterestSlider: React.FC<InterestSliderProps> = ({ domain, value, onChange
 // ===================================================================
 interface ResultsPanelProps {
   result: AnalysisResponse;
+  sliderScores: InterestScores;
 }
 
-const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
+const ResultsPanel: React.FC<ResultsPanelProps> = ({ result, sliderScores }) => {
   const navigate = useNavigate();
+  const primarySlider = Math.max(0, Number(sliderScores[result.primary_interest as InterestDomain] ?? 0));
+  const primaryIntensityPct = getPercentage(primarySlider);
+  const recommendationTags = Array.from(
+    new Set([
+      result.primary_interest,
+      ...(result.recommendation.skill_roadmap?.flatMap((r) => r.topics || []).slice(0, 6) || []),
+      ...(result.recommendation.career_paths?.flatMap((c) => c.required_skills || []).slice(0, 6) || []),
+    ].filter(Boolean))
+  ).slice(0, 8);
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex gap-3 text-emerald-900">
+        <span className="text-xl flex-shrink-0" aria-hidden>
+          ✓
+        </span>
+        <div>
+          <p className="font-semibold text-sm">Step 1 complete — interest check saved</p>
+          <p className="text-xs text-emerald-800/90 mt-0.5">
+            Your ratings, tags, and assessment context were saved to your profile. Next: take a quiz on{' '}
+            <span className="font-medium">{result.primary_interest}</span> to unlock your personalized learning path
+            (roadmap, courses, careers, and résumé).
+          </p>
+        </div>
+      </div>
+
       {/* Primary Recommendation Card */}
       <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-xl">
         <div className="flex items-center gap-3 mb-4">
@@ -255,14 +398,17 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
             <h3 className="text-2xl font-bold">{result.primary_interest}</h3>
           </div>
         </div>
+        <p className="text-xs text-white/75 mb-2">
+          Your rating <strong>{primarySlider}/10</strong> → <strong>{primaryIntensityPct}%</strong> (every domain: (rating ÷ 10) × 100)
+        </p>
         <div className="flex items-center gap-2 mb-4">
           <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
             <div
               className="h-full bg-white rounded-full transition-all duration-500"
-              style={{ width: `${parseFloat(result.ranked_interests[0]?.confidence || '0')}%` }}
+              style={{ width: `${primaryIntensityPct}%` }}
             />
           </div>
-          <span className="text-sm font-semibold">{result.ranked_interests[0]?.confidence}</span>
+          <span className="text-sm font-semibold">{primaryIntensityPct}%</span>
         </div>
         <p className="text-sm text-white/90">{result.recommendation.justification}</p>
       </div>
@@ -275,6 +421,21 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
         </div>
         <p className="text-sm text-slate-700">{result.ranked_interests[0]?.reason}</p>
       </div>
+
+      {recommendationTags.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <span className="text-lg">🏷️</span> Recommendation Tags
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {recommendationTags.map((tag) => (
+              <span key={tag} className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-full">
+                {tag}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Learning Approach */}
       {result.recommendation.learning_approach && (
@@ -299,8 +460,24 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
         <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
           <span className="text-lg">🏆</span> Your Interest Rankings
         </h4>
+        <p className="text-xs text-slate-500 mb-3">
+          Each bar uses your slider for that domain: (rating ÷ 10) × 100. Ranking order still follows the model.
+        </p>
         <div className="space-y-3">
           {result.ranked_interests.map((interest, idx) => (
+            (() => {
+              const w = Math.max(0, Number(sliderScores[interest.name as InterestDomain] ?? 0));
+              const pct =
+                w > 0
+                  ? getPercentage(w)
+                  : Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        Number.parseFloat(String(interest.percentage || '0').replace('%', '')) || 0,
+                      ),
+                    );
+              return (
             <div key={interest.name}>
               <div className="flex justify-between text-sm mb-1">
                 <span className="text-slate-700 flex items-center gap-2">
@@ -308,124 +485,53 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
                   {interest.name} (#{idx + 1})
                 </span>
                 <span className={`font-semibold ${idx === 0 ? 'text-indigo-600' : 'text-slate-500'}`}>
-                  {interest.percentage}%
+                  {pct}% <span className="font-normal text-slate-400">({w}/10)</span>
                 </span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${idx === 0 ? 'bg-gradient-to-r from-indigo-500 to-purple-500' : 'bg-slate-300'
                     }`}
-                  style={{ width: interest.percentage }}
+                  style={{ width: `${pct}%` }}
                 />
               </div>
               <p className="text-xs text-slate-500 mt-1">{interest.reason}</p>
             </div>
+              );
+            })()
           ))}
-        </div>
-        <div className="mt-4 p-3 bg-green-50 rounded-lg border border-green-200 text-xs text-green-800">
-          <span className="font-semibold">✓ Validation:</span> {result.data_validation.total_percentage}% total
         </div>
       </div>
 
-      {/* Career Paths */}
-      {result.recommendation.career_paths && result.recommendation.career_paths.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <span className="text-lg">💼</span> Recommended Career Paths
-          </h4>
-          <div className="space-y-3">
-            {result.recommendation.career_paths.slice(0, 3).map((career, idx) => (
-              <div key={idx} className="p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg border border-indigo-100">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h5 className="font-semibold text-slate-900">{career.title}</h5>
-                    <p className="text-xs text-slate-600 mt-1">
-                      Industry: {career.industry} • Growth: {career.growth_potential}
-                    </p>
-                  </div>
-                  {career.salary_range && (
-                    <span className="text-xs font-semibold text-green-600 bg-green-100 px-2 py-1 rounded">
-                      {career.salary_range}
-                    </span>
-                  )}
-                </div>
-                {career.required_skills && career.required_skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {career.required_skills.slice(0, 3).map((skill, i) => (
-                      <span key={i} className="text-xs bg-white text-slate-700 px-2 py-1 rounded border border-slate-200">
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Skill Roadmap */}
-      {result.recommendation.skill_roadmap && result.recommendation.skill_roadmap.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h4 className="font-bold text-slate-900 mb-4 flex items-center gap-2">
-            <span className="text-lg">🛣️</span> Skill Development Roadmap
-          </h4>
-          <div className="space-y-3">
-            {result.recommendation.skill_roadmap.map((level, idx) => (
-              <div key={idx} className="border border-slate-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 bg-indigo-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                    {idx + 1}
-                  </div>
-                  <h5 className="font-semibold text-slate-900">{level.level}</h5>
-                </div>
-                <p className="text-sm text-slate-600 mb-2">Duration: {level.duration}</p>
-                {level.topics && level.topics.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {level.topics.map((topic, i) => (
-                      <span key={i} className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded">
-                        {topic}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {level.projects && level.projects.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-xs font-semibold text-slate-700 mb-1">Projects</p>
-                    <div className="flex flex-wrap gap-1">
-                      {level.projects.map((project, i) => (
-                        <span key={i} className="text-xs bg-slate-100 text-slate-700 px-2 py-1 rounded">
-                          {project}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Action buttons: single vertical stack */}
+      <div className="flex flex-col gap-3 items-center w-full max-w-2xl mx-auto">
         <button
-          onClick={() => navigate('/profile')}
-          className="flex-1 py-3 px-6 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-          </svg>
-          Go to Dashboard
-        </button>
-        <button
+          type="button"
           onClick={() => navigate('/quizzes')}
-          className="flex-1 py-3 px-6 bg-white text-indigo-600 font-semibold rounded-xl border-2 border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50 transition flex items-center justify-center gap-2"
+          className="w-full max-w-sm py-3 px-6 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-200/80 flex items-center justify-center gap-2"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Start Learning
+          Take quiz to unlock your learning path
+        </button>
+        <p className="text-sm text-slate-500 text-center max-w-sm">
+          After your first quiz, OpenAI will generate your Roadmap, Courses, Careers, and Resume for your selected
+          domain.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('Do you really want to go to dashboard')) {
+              navigate('/dashboard');
+            }
+          }}
+          className="w-full max-w-sm py-3 px-6 bg-white text-indigo-700 font-semibold rounded-xl border-2 border-indigo-200 hover:border-indigo-400 hover:bg-indigo-50 transition flex items-center justify-center gap-2"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+          </svg>
+          Go to Dashboard
         </button>
       </div>
     </div>
@@ -436,16 +542,32 @@ const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
 // Main Component
 // ===================================================================
 const InterestAssessment: React.FC = () => {
-  const { user, isAuthenticated, setOnboardingComplete } = useStore();
+  const { user, isAuthenticated, setOnboardingComplete, logout } = useStore();
+  const navigate = useNavigate();
+
+  const handleAuthFailure = useCallback(async () => {
+    try {
+      await logout();
+    } catch {
+      // Ignore logout API failures; we still redirect to login.
+    }
+    navigate('/login', {
+      replace: true,
+      state: {
+        from: '/quizzes/interest-check',
+        message: 'Your session is invalid or expired. Please log in again.',
+      },
+    });
+  }, [logout, navigate]);
 
   // Form state
   const [currentStep, setCurrentStep] = useState(1);
   const [scores, setScores] = useState<InterestScores>({ ...defaultScores });
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [known, setKnown] = useState('');
-  const [want, setWant] = useState('');
-  const [goals, setGoals] = useState('');
+  const [selectedKnownTags, setSelectedKnownTags] = useState<string[]>([]);
+  const [selectedWantTags, setSelectedWantTags] = useState<string[]>([]);
+  const goals = '';
   const [errors, setErrors] = useState<FormErrors>({});
 
   // API state
@@ -458,6 +580,37 @@ const InterestAssessment: React.FC = () => {
   const [showTieResolution, setShowTieResolution] = useState(false);
   const [tieCandidates, setTieCandidates] = useState<string[]>([]);
   const [tieResolvingLoading, setTieResolvingLoading] = useState(false);
+  const [domainMetrics, setDomainMetrics] = useState<Record<InterestDomain, DomainInteractionMetric>>(
+    DOMAINS.reduce((acc, domain) => {
+      acc[domain] = { sliderChanges: 0, firstInteractionAt: null, lastInteractionAt: null };
+      return acc;
+    }, {} as Record<InterestDomain, DomainInteractionMetric>)
+  );
+  const [step2StartedAt, setStep2StartedAt] = useState<number | null>(null);
+  const textInteractionRef = useRef<number>(0);
+
+  const known = selectedKnownTags.join(', ');
+  const want = selectedWantTags.join(', ');
+
+  const toggleKnownTag = useCallback((tag: string) => {
+    setSelectedKnownTags((prev) => {
+      const lower = tag.toLowerCase();
+      const has = prev.some((t) => t.toLowerCase() === lower);
+      if (has) return prev.filter((t) => t.toLowerCase() !== lower);
+      return [...prev, tag];
+    });
+    textInteractionRef.current += 1;
+  }, []);
+
+  const toggleWantTag = useCallback((tag: string) => {
+    setSelectedWantTags((prev) => {
+      const lower = tag.toLowerCase();
+      const has = prev.some((t) => t.toLowerCase() === lower);
+      if (has) return prev.filter((t) => t.toLowerCase() !== lower);
+      return [...prev, tag];
+    });
+    textInteractionRef.current += 1;
+  }, []);
 
   // Initialize form with user data
   useEffect(() => {
@@ -512,6 +665,7 @@ const InterestAssessment: React.FC = () => {
   const handleNextStep = () => {
     if (currentStep === 1 && validateStep1()) {
       setCurrentStep(2);
+      setStep2StartedAt(Date.now());
     }
   };
 
@@ -525,6 +679,18 @@ const InterestAssessment: React.FC = () => {
   // Handle score change
   const handleScoreChange = (domain: InterestDomain, value: number) => {
     setScores((prev) => ({ ...prev, [domain]: value }));
+    setDomainMetrics((prev) => {
+      const now = Date.now();
+      const current = prev[domain];
+      return {
+        ...prev,
+        [domain]: {
+          sliderChanges: current.sliderChanges + 1,
+          firstInteractionAt: current.firstInteractionAt ?? now,
+          lastInteractionAt: now,
+        },
+      };
+    });
   };
 
   // Reset all scores
@@ -534,11 +700,19 @@ const InterestAssessment: React.FC = () => {
     setApiError(null);
     setCurrentStep(1);
     setErrors({});
+    setSelectedKnownTags([]);
+    setSelectedWantTags([]);
   };
 
   // Submit assessment
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const hasAtLeastOneInterest = DOMAINS.some((domain) => Number(scores[domain]) > 0);
+    if (!hasAtLeastOneInterest) {
+      setApiError('Please rate at least one domain above 0 before generating your learning path.');
+      return;
+    }
 
     if (apiStatus === 'offline') {
       setApiError('The API is currently offline. Please ensure the Flask server is running.');
@@ -553,9 +727,43 @@ const InterestAssessment: React.FC = () => {
         user: { name, email, known, want, goals },
         scores,
         save_results: true,
+        behavioral_data: DOMAINS.reduce((acc, domain) => {
+          const metric = domainMetrics[domain];
+          const startedAt = metric.firstInteractionAt ?? step2StartedAt ?? Date.now();
+          const endedAt = metric.lastInteractionAt ?? Date.now();
+          const timeSpentMinutes = Math.max(0, (endedAt - startedAt) / 60000);
+          const interestScore = Number(scores[domain] || 0);
+          const hasInteraction = metric.sliderChanges > 0;
+          const interactionIntensity = Math.min(10, metric.sliderChanges + (interestScore >= 7 ? 2 : 0));
+          acc[domain] = {
+            time_spent_minutes: Number(timeSpentMinutes.toFixed(2)),
+            quiz_performance: interestScore, // proxy until quiz behavior arrives
+            click_frequency: hasInteraction ? interactionIntensity : 0,
+            // Do not inject synthetic repeat activity for untouched zero-score domains.
+            repeat_selection: hasInteraction ? (metric.sliderChanges > 1 ? 8 : 4) : 0,
+            completion_rate: interestScore / 10,
+            skips: interestScore <= 3 ? 1 : 0,
+            saves: hasInteraction && interestScore >= 8 ? 1 : 0,
+            engagement_depth: hasInteraction
+              ? Math.min(10, (interestScore * 0.7) + (metric.sliderChanges * 0.6))
+              : 0,
+          };
+          return acc;
+        }, {} as Record<string, any>),
+        historical_data: [
+          {
+            domain: DOMAINS.reduce((best, d) => (scores[d] > scores[best] ? d : best), DOMAINS[0]),
+            score: Math.max(...DOMAINS.map((d) => scores[d])),
+            date: new Date().toISOString(),
+          },
+        ],
       };
 
-      const data = await submitInterestAssessment(payload);
+      const assessmentTags = collectAssessmentTags(known, want, goals);
+      const data = await submitInterestAssessment({
+        ...payload,
+        tags: assessmentTags,
+      });
       setResult(data);
 
       // Check if tie was detected
@@ -570,17 +778,35 @@ const InterestAssessment: React.FC = () => {
         // Update store with onboarding completion
         setOnboardingComplete({
           primaryInterest: data.primary_interest,
-          confidence: parseFloat(data.ranked_interests[0]?.confidence || '0') / 100,
-          allInterests: data.ranked_interests.map(r => ({
-            domain: r.name,
-            confidence: parseFloat(r.percentage) / 100
-          })),
+          confidence: primaryStrengthFromSliders(data.primary_interest, scores as Record<string, number>),
+          allInterests: buildAllInterestsFromSlidersAndRanked(data.ranked_interests, scores as Record<string, number>),
+          domainScores: { ...scores },
           completedAt: new Date().toISOString(),
+          assessmentContext: {
+            known,
+            want,
+            goals,
+          },
+          assessmentTags: collectAssessmentTags(known, want, goals),
+          realtimeSignals: {
+            totalTimeSpentSec: step2StartedAt ? Math.floor((Date.now() - step2StartedAt) / 1000) : undefined,
+            domainsInteracted: DOMAINS.filter((d) => (domainMetrics[d]?.sliderChanges || 0) > 0).length,
+          },
         });
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-      setApiError(errorMessage);
+      const parsed = parseApiError(err, 'Something went wrong. Please try again.');
+      if (
+        parsed.status === 401 ||
+        parsed.code === 'INVALID_TOKEN' ||
+        parsed.code === 'TOKEN_EXPIRED' ||
+        parsed.code === 'INVALID_TOKEN_CONTEXT' ||
+        parsed.code === 'NO_TOKEN'
+      ) {
+        await handleAuthFailure();
+        return;
+      }
+      setApiError(parsed.code ? `${parsed.message} [${parsed.code}]` : parsed.message);
     } finally {
       setLoading(false);
     }
@@ -590,7 +816,10 @@ const InterestAssessment: React.FC = () => {
   const handleTieResolution = async (selectedDomain: string) => {
     setTieResolvingLoading(true);
     try {
-      await resolveTie(selectedDomain);
+      await resolveTie(selectedDomain, result ? {
+        ranked_interests: result.ranked_interests,
+        tie_detected: result.tie_detected,
+      } : undefined);
       setShowTieResolution(false);
       
       // Update result with user decision
@@ -605,16 +834,44 @@ const InterestAssessment: React.FC = () => {
       // Update store
       setOnboardingComplete({
         primaryInterest: selectedDomain,
-        confidence: parseFloat(updatedResult?.ranked_interests.find(r => r.name === selectedDomain)?.confidence || '0') / 100,
-        allInterests: updatedResult?.ranked_interests.map(r => ({
-          domain: r.name,
-          confidence: parseFloat(r.percentage) / 100
-        })) || [],
+        confidence: primaryStrengthFromSliders(selectedDomain, scores as Record<string, number>),
+        allInterests: buildAllInterestsFromSlidersAndRanked(
+          updatedResult?.ranked_interests || [],
+          scores as Record<string, number>,
+        ),
+        domainScores: { ...scores },
         completedAt: new Date().toISOString(),
+        assessmentContext: {
+          known,
+          want,
+          goals,
+        },
+        assessmentTags: collectAssessmentTags(known, want, goals),
+        realtimeSignals: {
+          totalTimeSpentSec: step2StartedAt ? Math.floor((Date.now() - step2StartedAt) / 1000) : undefined,
+          domainsInteracted: DOMAINS.filter((d) => (domainMetrics[d]?.sliderChanges || 0) > 0).length,
+        },
       });
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to resolve tie';
-      setApiError(errorMessage);
+      const parsed = parseApiError(err, 'Failed to resolve tie');
+      const errorMessage = parsed.message;
+      if (
+        parsed.status === 401 ||
+        parsed.code === 'INVALID_TOKEN' ||
+        parsed.code === 'TOKEN_EXPIRED' ||
+        parsed.code === 'INVALID_TOKEN_CONTEXT' ||
+        parsed.code === 'NO_TOKEN'
+      ) {
+        await handleAuthFailure();
+        return;
+      }
+      if (errorMessage.toLowerCase().includes('no pending interest analysis')) {
+        setShowTieResolution(false);
+        setCurrentStep(2);
+        setApiError('We could not find your pending tie session. Please submit once more, then select your preferred domain.');
+      } else {
+        setApiError(parsed.code ? `${errorMessage} [${parsed.code}]` : errorMessage);
+      }
     } finally {
       setTieResolvingLoading(false);
     }
@@ -711,46 +968,56 @@ const InterestAssessment: React.FC = () => {
                       )}
                     </div>
 
-                    {/* What do you know */}
+                    {/* What do you know — tags only */}
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        What do you already know? <span className="text-slate-400">(optional)</span>
+                        What do you already know?
                       </label>
-                      <input
-                        type="text"
-                        value={known}
-                        onChange={(e) => setKnown(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                        placeholder="I know responsive design with Bootstrap"
-                      />
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        {KNOWN_TAGS.map((tag) => {
+                          const selected = selectedKnownTags.some((t) => t.toLowerCase() === tag.toLowerCase());
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => toggleKnownTag(tag)}
+                              className={`inline-flex items-center max-w-full px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs leading-none font-medium rounded-full border transition ${
+                                selected
+                                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                  : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                              }`}
+                            >
+                              {tag}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {/* What do you want to learn */}
+                    {/* What do you want to learn — tags only */}
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        What do you want to learn? <span className="text-slate-400">(optional)</span>
+                        What do you want to learn?
                       </label>
-                      <input
-                        type="text"
-                        value={want}
-                        onChange={(e) => setWant(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-                        placeholder="I want to build REST APIs with Node.js"
-                      />
-                    </div>
-
-                    {/* Learning Goals */}
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">
-                        Learning Goals <span className="text-slate-400">(optional)</span>
-                      </label>
-                      <textarea
-                        value={goals}
-                        onChange={(e) => setGoals(e.target.value)}
-                        rows={3}
-                        className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
-                        placeholder="Become a full-stack developer in 6 months"
-                      />
+                      <div className="flex flex-wrap gap-1.5 sm:gap-2">
+                        {WANT_TAGS.map((tag) => {
+                          const selected = selectedWantTags.some((t) => t.toLowerCase() === tag.toLowerCase());
+                          return (
+                            <button
+                              key={tag}
+                              type="button"
+                              onClick={() => toggleWantTag(tag)}
+                              className={`inline-flex items-center max-w-full px-2 py-1 sm:px-2.5 text-[11px] sm:text-xs leading-none font-medium rounded-full border transition ${
+                                selected
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                              }`}
+                            >
+                              {tag}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     {/* Next Button */}
@@ -780,7 +1047,7 @@ const InterestAssessment: React.FC = () => {
                       </div>
                       <div>
                         <h2 className="text-xl font-bold text-slate-900">Rate Your Interests</h2>
-                        <p className="text-sm text-slate-500">Score each domain from 1 (Low) to 10 (High)</p>
+                      <p className="text-sm text-slate-500">Score each domain from 0 (No interest) to 10 (High)</p>
                       </div>
                     </div>
                     <button
@@ -791,7 +1058,7 @@ const InterestAssessment: React.FC = () => {
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Reset to 5
+                      Reset to 0
                     </button>
                   </div>
 
@@ -871,7 +1138,7 @@ const InterestAssessment: React.FC = () => {
                       <p className="text-sm text-slate-500">Based on your interest ratings</p>
                     </div>
                   </div>
-                  <ResultsPanel result={result} />
+                  <ResultsPanel result={result} sliderScores={scores} />
                 </div>
               )}
             </div>
@@ -879,6 +1146,7 @@ const InterestAssessment: React.FC = () => {
 
           {/* Sidebar */}
           <div className="lg:col-span-1 space-y-6">
+            <CompletionRoadmapPanel currentStep={currentStep} />
             <HowItWorksPanel />
 
             {/* User Summary Card */}

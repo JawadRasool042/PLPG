@@ -21,6 +21,7 @@ POST /forgot-password   - Request password reset
 POST /reset-password    - Set new password
 """
 
+import os
 import re
 import jwt
 import time
@@ -34,7 +35,13 @@ import bcrypt
 from config import get_config
 from models.user import User
 from middleware.auth import authenticate_token, get_client_ip, get_user_agent
-from services.email_service import send_verification_email, send_password_reset_email, send_welcome_email
+from services.email_service import (
+    send_verification_email,
+    send_password_reset_email,
+    send_welcome_email,
+    get_email_config_status,
+    EmailService,
+)
 from utils.token_utils import generate_user_tokens, verify_user_token, get_token_expiry_seconds
 
 config = get_config()
@@ -90,6 +97,7 @@ def create_rate_limiter(window_ms: int, max_requests: int, key_func, message: st
 def get_ip_key(prefix):
     return lambda req: f"{prefix}:{get_client_ip()}"
 
+
 def get_email_key(prefix):
     def key_gen(req):
         email = req.get_json(silent=True) or {}
@@ -129,6 +137,72 @@ def log_security_event(event: str, details: dict):
     """Log security event"""
     timestamp = datetime.utcnow().isoformat()
     print(f'[SECURITY] {timestamp} - {event}: {details}')
+
+
+def normalize_verification_token(raw) -> str:
+    """Trim junk from pasted or JSON-borne tokens."""
+    if raw is None:
+        return ''
+    return str(raw).strip().strip('"').strip("'")
+
+
+def is_valid_verification_token_shape(token: str) -> bool:
+    """secrets.token_hex(32) emits 64 hex chars."""
+    return bool(token) and len(token) == 64 and re.fullmatch(r'[0-9a-fA-F]{64}', token) is not None
+
+
+def _is_production_runtime() -> bool:
+    return bool(getattr(config, 'IS_PRODUCTION', False))
+
+
+def _dev_email_env_flags() -> tuple[bool, bool]:
+    """(ALLOW_DEV_EMAIL_WITHOUT_SMTP, PLPG_FORCE_EMAIL_DEV_LINKS) as booleans."""
+    def _truthy(name: str) -> bool:
+        return os.getenv(name, '').strip().lower() in ('1', 'true', 'yes', 'on')
+
+    return _truthy('ALLOW_DEV_EMAIL_WITHOUT_SMTP'), _truthy('PLPG_FORCE_EMAIL_DEV_LINKS')
+
+
+def _dev_email_bypass_after_failed_send(not_configured: bool) -> bool:
+    """
+    When SMTP is missing or sending failed, optionally still complete onboarding in dev.
+
+    - Non-production only.
+    - If email is not configured: ALLOW_DEV_EMAIL_WITHOUT_SMTP or PLPG_FORCE_EMAIL_DEV_LINKS.
+    - If configured but send failed: PLPG_FORCE_EMAIL_DEV_LINKS only.
+    """
+    if _is_production_runtime():
+        return False
+    allow, force = _dev_email_env_flags()
+    if not_configured:
+        return allow or force
+    return force
+
+
+def _dev_verification_dict(raw_token: str) -> dict:
+    base = (config.FRONTEND_BASE_URL or os.getenv('FRONTEND_BASE_URL', 'http://localhost:5173')).rstrip('/')
+    url = f'{base}/verify-email?token={raw_token}'
+    return {
+        'verification_token': raw_token,
+        'verification_url': url,
+        'dev_note': (
+            'Development bypass: open verification_url in the browser. '
+            'For production, set EMAIL_USER, EMAIL_PASSWORD (Gmail App Password), and EMAIL_FROM.'
+        ),
+    }
+
+
+def _dev_password_reset_dict(reset_token: str) -> dict:
+    base = (config.FRONTEND_BASE_URL or os.getenv('FRONTEND_BASE_URL', 'http://localhost:5173')).rstrip('/')
+    url = f'{base}/reset-password?token={reset_token}'
+    return {
+        'reset_token': reset_token,
+        'reset_url': url,
+        'dev_note': (
+            'Development bypass: SMTP not used; use reset_url to set a new password. '
+            'Configure EMAIL_USER / EMAIL_PASSWORD for production.'
+        ),
+    }
 
 
 # ============================================
@@ -209,44 +283,108 @@ def register():
             'ip': client_ip
         })
         
-        # Handle email verification
-        import os
-        email_user = os.getenv('EMAIL_USER', '').strip()
-        is_dev = os.getenv('FLASK_ENV', 'development') == 'development'
+        email_status = get_email_config_status()
         email_sent = False
-        
-        if email_user:
-            # Send verification email (async would be better in production)
+
+        if email_status.get('configured'):
             try:
-                send_verification_email(email, raw_token, first_name)
-                email_sent = True
+                email_sent = bool(send_verification_email(email, raw_token, first_name))
+                if email_sent:
+                    User.mark_verification_email_dispatched(user_id)
+                else:
+                    last_err = EmailService.get_last_error()
+                    log_security_event('VERIFICATION_EMAIL_FAILED', {
+                        'email': email,
+                        'error': 'SMTP send returned false',
+                        'smtp_last_error': last_err,
+                    })
             except Exception as e:
                 log_security_event('VERIFICATION_EMAIL_FAILED', {'email': email, 'error': str(e)})
-        else:
-            # Email not configured
-            if config.IS_PRODUCTION:
-                logger.error("Email service not configured in production - users cannot verify emails")
-                return jsonify({
-                    'success': False,
-                    'message': 'Email service not configured. Registration temporarily unavailable.'
-                }), 500
-            else:
-                # Development mode without email - warn but allow (do NOT auto-verify)
-                logger.warning(f"Email service not configured in development - user {email} must verify manually")
-        
+
+        if email_sent:
+            response_payload = {
+                'id': user_id,
+                'email': user['email'],
+                'first_name': user['firstName'],
+                'last_name': user['lastName'],
+                'role': user['role'],
+                'is_active': user['isActive'],
+                'is_email_verified': False,
+                'message': 'Registration successful! Please check your email to verify your account.',
+                'email_sent': True,
+                'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
+            }
+            return jsonify(response_payload), 201
+
+        not_configured = not email_status.get('configured')
+        if _dev_email_bypass_after_failed_send(not_configured):
+            log_security_event('REGISTER_DEV_EMAIL_BYPASS', {
+                'userId': user_id,
+                'email': email,
+                'ip': client_ip,
+                'not_configured': not_configured,
+            })
+            logger.warning(
+                'REGISTER_DEV_EMAIL_BYPASS user=%s email=%s not_configured=%s',
+                user_id,
+                email,
+                not_configured,
+            )
+            response_payload = {
+                'id': user_id,
+                'email': user['email'],
+                'first_name': user['firstName'],
+                'last_name': user['lastName'],
+                'role': user['role'],
+                'is_active': user['isActive'],
+                'is_email_verified': False,
+                'message': (
+                    'Registration successful. SMTP is skipped in development — use the verification link '
+                    'returned in this response to verify your email.'
+                ),
+                'email_sent': False,
+                'dev_fallback': True,
+                'verification': _dev_verification_dict(raw_token),
+                'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
+            }
+            return jsonify(response_payload), 201
+
+        if not_configured:
+            logger.error("Email service not configured - missing EMAIL_USER / EMAIL_PASSWORD (or EMAIL_PASS)")
+            return jsonify({
+                'success': False,
+                'detail': (
+                    'Email service is not configured. Set EMAIL_USER / EMAIL_PASSWORD (Gmail App Password) '
+                    'and EMAIL_FROM in .env, then restart Flask. For local testing without SMTP, set '
+                    'ALLOW_DEV_EMAIL_WITHOUT_SMTP=true (non-production only).'
+                ),
+                'message': 'Email service is not configured. Registration temporarily unavailable.',
+                'error_code': 'EMAIL_NOT_CONFIGURED',
+                'missing_settings': email_status.get('issues', []),
+                'email_provider': email_status.get('provider', 'gmail'),
+                'hint': (
+                    'Gmail: use an App Password (Google Account → Security → App passwords). '
+                    'Set EMAIL_USER, EMAIL_PASSWORD, and EMAIL_FROM to real Gmail values, then restart the server.'
+                ),
+            }), 500
+
+        last_err = EmailService.get_last_error()
+        logger.error(
+            'REGISTER_EMAIL_SEND_FAILED email=%s smtp_last_error=%s',
+            email,
+            last_err,
+        )
         return jsonify({
-            'id': user_id,
-            'email': user['email'],
-            'first_name': user['firstName'],
-            'last_name': user['lastName'],
-            'role': user['role'],
-            'is_active': user['isActive'],
-            'is_email_verified': False,
-            'message': 'Registration successful! Please check your email to verify your account.' if email_sent else 'Registration successful! Please verify your email (check spam folder).',
-            'email_sent': email_sent,
-            'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None
-        }), 201
-        
+            'success': False,
+            'detail': (
+                'Failed to send verification email. Check Gmail App Password, EMAIL_FROM, and SMTP settings. '
+                'In non-production you may set PLPG_FORCE_EMAIL_DEV_LINKS=true to receive a verification URL in the API response.'
+            ),
+            'message': 'Verification email could not be sent.',
+            'error_code': 'EMAIL_SEND_FAILED',
+            'smtp_last_error': last_err,
+        }), 500
+
     except Exception as e:
         print(f'Registration error: {e}')
         log_security_event('REGISTRATION_ERROR', {'email': email, 'error': str(e), 'ip': client_ip})
@@ -265,9 +403,9 @@ def register():
 )
 def verify_email():
     data = request.get_json() or {}
-    token = data.get('token', '')
-    
-    if not token or len(token) != 64:
+    token = normalize_verification_token(data.get('token'))
+
+    if not is_valid_verification_token_shape(token):
         return jsonify({
             'detail': 'Invalid verification token',
             'error_code': 'INVALID_TOKEN_FORMAT'
@@ -351,8 +489,9 @@ def verify_email():
 )
 def verify_email_get(token):
     frontend_url = config.FRONTEND_BASE_URL
-    
-    if not token or len(token) != 64:
+    token = normalize_verification_token(token)
+
+    if not is_valid_verification_token_shape(token):
         return redirect(f'{frontend_url}/verify-email?error=true&code=INVALID_TOKEN')
     
     client_ip = get_client_ip()
@@ -403,7 +542,7 @@ def verify_email_get(token):
 @auth_bp.route('/resend-verification', methods=['POST'])
 @create_rate_limiter(
     window_ms=5 * 60 * 1000,  # 5 minutes
-    max_requests=1,
+    max_requests=8,
     key_func=get_email_key('resend'),
     message='Please wait 5 minutes before requesting another verification email.'
 )
@@ -447,27 +586,77 @@ def resend_verification():
         
         # Generate new token
         raw_token = User.set_verification_token(user_id)
-        
-        # Send email
-        email_sent = send_verification_email(email, raw_token, user['firstName'])
-        
-        if not email_sent:
-            log_security_event('RESEND_EMAIL_FAILED', {'email': email, 'ip': client_ip})
+
+        email_status = get_email_config_status()
+        email_sent = False
+
+        if email_status.get('configured'):
+            email_sent = send_verification_email(email, raw_token, user['firstName'])
+            if email_sent:
+                User.mark_verification_email_dispatched(user_id)
+
+        if email_sent:
+            response_payload = {
+                'message': 'Verification email sent! Please check your inbox.',
+                'success': True,
+                'email_sent': True,
+                'dev_fallback': False,
+            }
+            log_security_event('VERIFICATION_EMAIL_RESENT', {
+                'userId': user_id,
+                'email': email,
+                'ip': client_ip,
+                'email_sent': True,
+                'dev_fallback': False,
+            })
+            return jsonify(response_payload)
+
+        not_configured = not email_status.get('configured')
+        if _dev_email_bypass_after_failed_send(not_configured):
+            log_security_event('RESEND_DEV_EMAIL_BYPASS', {
+                'userId': user_id,
+                'email': email,
+                'ip': client_ip,
+                'not_configured': not_configured,
+            })
+            logger.warning('RESEND_DEV_EMAIL_BYPASS user=%s email=%s', user_id, email)
             return jsonify({
-                'detail': 'Failed to send verification email. Please try again later.',
-                'error_code': 'EMAIL_SEND_FAILED'
+                'message': (
+                    'SMTP is skipped in development. Use the verification link in this response to verify your account.'
+                ),
+                'success': True,
+                'email_sent': False,
+                'dev_fallback': True,
+                'verification': _dev_verification_dict(raw_token),
+            })
+
+        if not_configured:
+            log_security_event('RESEND_EMAIL_NOT_CONFIGURED', {'email': email, 'ip': client_ip})
+            return jsonify({
+                'detail': (
+                    'Email service is not configured. Set EMAIL_USER / EMAIL_PASSWORD (Gmail App Password) '
+                    'and EMAIL_FROM in .env, then restart Flask. For local testing without SMTP, set '
+                    'ALLOW_DEV_EMAIL_WITHOUT_SMTP=true (non-production only).'
+                ),
+                'error_code': 'EMAIL_NOT_CONFIGURED',
+                'missing_settings': email_status.get('issues', []),
+                'email_provider': email_status.get('provider', 'gmail'),
+                'hint': 'Gmail uses an App Password, not your normal password.',
             }), 500
-        
-        log_security_event('VERIFICATION_EMAIL_RESENT', {
-            'userId': user_id,
-            'email': email,
-            'ip': client_ip
-        })
-        
-        return jsonify({
-            'message': 'Verification email sent! Please check your inbox.',
-            'success': True
-        })
+
+        log_security_event('RESEND_EMAIL_FAILED', {'email': email, 'ip': client_ip})
+        last_err = EmailService.get_last_error()
+        payload = {
+            'detail': (
+                'Failed to send verification email. Wrong App Password / blocked SMTP / or EMAIL_FROM mismatch. '
+                'Check Flask logs; fix EMAIL_PASSWORD and EMAIL_FROM, restart the server. '
+                'In non-production you may set PLPG_FORCE_EMAIL_DEV_LINKS=true to receive a verification URL in the API response.'
+            ),
+            'error_code': 'EMAIL_SEND_FAILED',
+        }
+        if last_err:
+            payload['smtp_last_error'] = last_err
+        return jsonify(payload), 500
         
     except Exception as e:
         print(f'Resend verification error: {e}')
@@ -640,10 +829,36 @@ def refresh_access_token():
 def get_me():
     try:
         user = User.find_by_email(g.user['email'])
-        
+
         if not user:
             return jsonify({'detail': 'User not found'}), 404
-        
+
+        # Serialize the stored interestAssessment so the frontend can rehydrate
+        # onboarding state from the server (Requirement C4).
+        assessment_doc = user.get('interestAssessment') or {}
+        interest_assessment = None
+        if assessment_doc.get('completed'):
+            interest_assessment = {
+                'completed': True,
+                'primaryInterest': assessment_doc.get('primaryInterest'),
+                'confidence': assessment_doc.get('confidence', 0),
+                'allInterests': assessment_doc.get('allInterests', []),
+                'domainScores': assessment_doc.get('domainScores'),
+                'tieResolved': bool(assessment_doc.get('tieResolved')),
+                'completedAt': (
+                    assessment_doc.get('completedAt').isoformat()
+                    if hasattr(assessment_doc.get('completedAt'), 'isoformat')
+                    else assessment_doc.get('completedAt')
+                ),
+                'lastUpdated': (
+                    assessment_doc.get('lastUpdated').isoformat()
+                    if hasattr(assessment_doc.get('lastUpdated'), 'isoformat')
+                    else assessment_doc.get('lastUpdated')
+                ),
+                'assessmentContext': assessment_doc.get('assessmentContext'),
+                'assessmentTags': assessment_doc.get('assessmentTags') or [],
+            }
+
         return jsonify({
             'id': str(user['_id']),
             'email': user['email'],
@@ -653,9 +868,11 @@ def get_me():
             'is_active': user.get('isActive'),
             'is_email_verified': user.get('isEmailVerified'),
             'email_verified_at': user.get('emailVerifiedAt').isoformat() if user.get('emailVerifiedAt') else None,
-            'created_at': user.get('createdAt').isoformat() if user.get('createdAt') else None
+            'created_at': user.get('createdAt').isoformat() if user.get('createdAt') else None,
+            'interestAssessment': interest_assessment,
+            'focusDomains': user.get('focusDomains', []),
         })
-        
+
     except Exception as e:
         print(f'Get user error: {e}')
         return jsonify({'detail': 'An unexpected error occurred. Please try again.'}), 500
@@ -693,19 +910,40 @@ def forgot_password():
         
         # Generate password reset token
         reset_token = User.set_password_reset_token(user_id)
-        
-        # Send email
-        email_sent = send_password_reset_email(email, reset_token, user['firstName'])
-        
+
+        email_status = get_email_config_status()
+        email_sent = False
+        if email_status.get('configured'):
+            email_sent = send_password_reset_email(email, reset_token, user['firstName'])
+
         if email_sent:
             log_security_event('PASSWORD_RESET_REQUESTED', {
                 'userId': user_id,
                 'email': email,
                 'ip': client_ip
             })
-        else:
-            log_security_event('PASSWORD_RESET_EMAIL_FAILED', {'email': email, 'ip': client_ip})
-        
+            return jsonify({'message': success_message, 'success': True, 'email_sent': True})
+
+        not_configured = not email_status.get('configured')
+        if _dev_email_bypass_after_failed_send(not_configured):
+            log_security_event('FORGOT_PASSWORD_DEV_EMAIL_BYPASS', {
+                'userId': user_id,
+                'email': email,
+                'ip': client_ip,
+                'not_configured': not_configured,
+            })
+            logger.warning('FORGOT_PASSWORD_DEV_EMAIL_BYPASS user=%s email=%s', user_id, email)
+            return jsonify({
+                'message': (
+                    'Development mode: no email was sent. Use the reset link in this response to set a new password.'
+                ),
+                'success': True,
+                'email_sent': False,
+                'dev_fallback': True,
+                'password_reset': _dev_password_reset_dict(reset_token),
+            })
+
+        log_security_event('PASSWORD_RESET_EMAIL_FAILED', {'email': email, 'ip': client_ip})
         return jsonify({'message': success_message, 'success': True})
         
     except Exception as e:

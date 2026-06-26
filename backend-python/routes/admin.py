@@ -14,6 +14,8 @@ import jwt
 import re
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, g
+from database import get_collection
+from bson import ObjectId
 
 from config import get_config
 from models.admin import Admin, Role, Permission
@@ -93,6 +95,47 @@ def validate_pagination(page, limit):
     
     skip = (page_num - 1) * limit_num
     return page_num, limit_num, skip
+
+
+def _user_created_at(user_doc):
+    """
+    Resolve a user creation datetime from createdAt or ObjectId timestamp.
+    This keeps analytics accurate even for legacy users missing createdAt.
+    """
+    created = user_doc.get('createdAt') or user_doc.get('created_at') or user_doc.get('timestamp')
+    if isinstance(created, datetime):
+        return created.replace(tzinfo=None) if created.tzinfo else created
+    if isinstance(created, str):
+        try:
+            # Support ISO timestamps with trailing Z
+            return datetime.fromisoformat(created.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            pass
+    user_id = user_doc.get('_id')
+    if isinstance(user_id, ObjectId):
+        return user_id.generation_time.replace(tzinfo=None)
+    return None
+
+
+def _attempt_completed_at(attempt_doc):
+    """
+    Resolve quiz attempt completion datetime across schema variants.
+    """
+    completed = (
+        attempt_doc.get('completedAt')
+        or attempt_doc.get('completed_at')
+        or attempt_doc.get('submittedAt')
+        or attempt_doc.get('submitted_at')
+        or attempt_doc.get('updatedAt')
+    )
+    if isinstance(completed, datetime):
+        return completed.replace(tzinfo=None) if completed.tzinfo else completed
+    if isinstance(completed, str):
+        try:
+            return datetime.fromisoformat(completed.replace('Z', '+00:00')).replace(tzinfo=None)
+        except Exception:
+            return None
+    return None
 
 
 # ==================== AUTH ROUTES ====================
@@ -589,7 +632,7 @@ def get_user_by_id(user_id):
             'id': str(qa['_id']),
             'quizId': str(qa.get('quizId', '')),
             'score': qa.get('score', 0),
-            'completedAt': qa.get('completedAt').isoformat() if qa.get('completedAt') else None
+            'completedAt': QuizAttempt.completion_timestamp_iso(qa)
         }
         for qa in quiz_attempts
     ]
@@ -857,7 +900,7 @@ def admin_reset_user_password(user_id):
     
     # In production, send email with reset link
     # For now, return the token (remove in production!)
-    reset_link = f"{config.FRONTEND_URL}/reset-password?token={reset_token}"
+    reset_link = f"{config.FRONTEND_BASE_URL.rstrip('/')}/reset-password?token={reset_token}"
     
     # Log the action
     AuditLog.create({
@@ -1089,35 +1132,49 @@ def get_dashboard_analytics():
     seven_days_ago = now - timedelta(days=7)
     thirty_days_ago = now - timedelta(days=30)
     
-    # User metrics
-    total_users = User.count({})
-    verified_users = User.count({'isEmailVerified': True})
-    new_users_week = User.count({'createdAt': {'$gte': seven_days_ago}})
-    new_users_month = User.count({'createdAt': {'$gte': thirty_days_ago}})
+    users_coll = User.get_collection()
+    all_users = list(users_coll.find({}, {'createdAt': 1, 'isEmailVerified': 1}))
+
+    # User metrics from real MongoDB docs
+    total_users = len(all_users)
+    verified_users = sum(1 for u in all_users if bool(u.get('isEmailVerified')))
+    new_users_week = sum(1 for u in all_users if (_user_created_at(u) and _user_created_at(u) >= seven_days_ago))
+    new_users_month = sum(1 for u in all_users if (_user_created_at(u) and _user_created_at(u) >= thirty_days_ago))
     
     # Activity metrics
     total_logins = AuditLog.count({'action': 'LOGIN'})
     failed_logins = AuditLog.count({'action': 'LOGIN_FAILED'})
     admin_actions = AuditLog.count({'createdAt': {'$gte': seven_days_ago}})
-    
-    # User growth chart data (daily signups for last 30 days)
-    collection = User.get_collection()
-    user_growth = list(collection.aggregate([
-        {
-            '$match': {'createdAt': {'$gte': thirty_days_ago}}
-        },
-        {
-            '$group': {
-                '_id': {
-                    '$dateToString': {'format': '%Y-%m-%d', 'date': '$createdAt'}
-                },
-                'count': {'$sum': 1}
-            }
-        },
-        {
-            '$sort': {'_id': 1}
-        }
-    ]))
+
+    quiz_attempts_coll = get_collection('quiz_attempts')
+    attempts_recent = list(quiz_attempts_coll.find(
+        {},
+        {'completedAt': 1, 'completed_at': 1, 'submittedAt': 1, 'submitted_at': 1, 'updatedAt': 1}
+    ))
+    one_day_ago = now - timedelta(days=1)
+    quiz_attempts_24h = sum(
+        1 for attempt in attempts_recent if (_attempt_completed_at(attempt) and _attempt_completed_at(attempt) >= one_day_ago)
+    )
+
+    # User growth chart data (daily signups for last 30 days) from actual user docs.
+    user_growth_raw = {}
+    for user in all_users:
+        created_at = _user_created_at(user)
+        if not created_at or created_at < thirty_days_ago:
+            continue
+        key = created_at.strftime('%Y-%m-%d')
+        user_growth_raw[key] = user_growth_raw.get(key, 0) + 1
+
+    # Build a dense 30-day series so charts always render real-time trend
+    # (including zero-signup days instead of empty/missing points).
+    growth_map = {k: int(v or 0) for k, v in user_growth_raw.items()}
+    user_growth = []
+    for i in range(29, -1, -1):
+        day = (now - timedelta(days=i)).strftime('%Y-%m-%d')
+        user_growth.append({
+            '_id': day,
+            'count': growth_map.get(day, 0)
+        })
     
     # Recent activities
     recent_activities = AuditLog.find_many({}, 0, 10)
@@ -1136,7 +1193,8 @@ def get_dashboard_analytics():
                 'activity': {
                     'totalLogins': total_logins,
                     'failedLogins': failed_logins,
-                    'adminActionsThisWeek': admin_actions
+                    'adminActionsThisWeek': admin_actions,
+                    'quizAttempts24h': quiz_attempts_24h,
                 }
             },
             'charts': {
@@ -1151,13 +1209,79 @@ def get_dashboard_analytics():
 @authenticate_admin
 @authorize('analytics_read')
 def get_user_engagement():
-    days = int(request.args.get('days', 30))
-    
+    days = max(1, min(int(request.args.get('days', 30)), 180))
+    start_date = datetime.utcnow() - timedelta(days=days)
+
+    attempts_coll = get_collection('quiz_attempts')
+    attempts_all = list(attempts_coll.find({}))
+    attempts = [
+        a for a in attempts_all
+        if (_attempt_completed_at(a) and _attempt_completed_at(a) >= start_date)
+    ]
+    total_attempts = len(attempts)
+
+    avg_quiz_score = round(
+        sum(float(a.get('score', 0) or 0) for a in attempts) / total_attempts, 2
+    ) if total_attempts else 0.0
+
+    high_scores = sum(1 for a in attempts if float(a.get('score', 0) or 0) >= 60)
+    path_completion_rate = round((high_scores / total_attempts) * 100, 2) if total_attempts else 0.0
+
+    unique_users = len({str(a.get('userId')) for a in attempts if a.get('userId')})
+    total_users = User.count({})
+    engagement_rate = round((unique_users / total_users) * 100, 2) if total_users else 0.0
+
+    score_buckets = {
+        '0-20%': 0,
+        '21-40%': 0,
+        '41-60%': 0,
+        '61-80%': 0,
+        '81-100%': 0,
+    }
+    for a in attempts:
+        score = float(a.get('score', 0) or 0)
+        if score <= 20:
+            score_buckets['0-20%'] += 1
+        elif score <= 40:
+            score_buckets['21-40%'] += 1
+        elif score <= 60:
+            score_buckets['41-60%'] += 1
+        elif score <= 80:
+            score_buckets['61-80%'] += 1
+        else:
+            score_buckets['81-100%'] += 1
+
+    weekly_labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4']
+    weekly_counts = [0, 0, 0, 0]
+    for a in attempts:
+        completed_at = _attempt_completed_at(a)
+        if not completed_at:
+            continue
+        age_days = (datetime.utcnow() - completed_at).days
+        if age_days < 7:
+            weekly_counts[3] += 1
+        elif age_days < 14:
+            weekly_counts[2] += 1
+        elif age_days < 21:
+            weekly_counts[1] += 1
+        elif age_days < 28:
+            weekly_counts[0] += 1
+
     return jsonify({
         'success': True,
         'message': 'User engagement analytics retrieved successfully',
         'data': {
-            'period': f'Last {days} days'
+            'period': f'Last {days} days',
+            'avgQuizScore': avg_quiz_score,
+            'pathCompletionRate': path_completion_rate,
+            'engagementRate': engagement_rate,
+            'quizScoreDistribution': [
+                {'range': k, 'count': v} for k, v in score_buckets.items()
+            ],
+            'weeklyProgress': [
+                {'week': weekly_labels[i], 'completed': weekly_counts[i]} for i in range(4)
+            ],
+            'updatedAt': datetime.utcnow().isoformat(),
         }
     })
 
@@ -1199,8 +1323,88 @@ def get_system_health():
 @authenticate_admin
 @authorize('reports_read')
 def get_detailed_report():
+    report_type = (request.args.get('reportType', 'user_overview') or 'user_overview').strip().lower()
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=30)
+
+    users_total = User.count({})
+    users_verified = User.count({'isEmailVerified': True})
+    users_pending = max(0, users_total - users_verified)
+
+    attempts_coll = get_collection('quiz_attempts')
+    attempts_all = list(attempts_coll.find({}))
+    attempts = [
+        a for a in attempts_all
+        if (_attempt_completed_at(a) and _attempt_completed_at(a) >= start_date)
+    ]
+    total_attempts = len(attempts)
+    avg_score = round(sum(float(a.get('score', 0) or 0) for a in attempts) / total_attempts, 2) if total_attempts else 0.0
+
+    total_logins = AuditLog.count({'action': 'LOGIN', 'createdAt': {'$gte': start_date}})
+    failed_logins = AuditLog.count({'action': 'LOGIN_FAILED', 'createdAt': {'$gte': start_date}})
+    admin_actions = AuditLog.count({'createdAt': {'$gte': start_date}})
+
+    if report_type == 'performance':
+        data = {
+            'reportType': report_type,
+            'period': 'Last 30 days',
+            'generatedAt': end_date.isoformat(),
+            'summary': {
+                'avgQuizScore': avg_score,
+                'totalAttempts': total_attempts,
+                'studentsAttempted': len({str(a.get('userId')) for a in attempts if a.get('userId')}),
+                'highScoreAttempts': sum(1 for a in attempts if float(a.get('score', 0) or 0) >= 80),
+            },
+        }
+    elif report_type == 'engagement':
+        success_rate = round(((total_logins - failed_logins) / total_logins) * 100, 2) if total_logins else 0.0
+        data = {
+            'reportType': report_type,
+            'period': 'Last 30 days',
+            'generatedAt': end_date.isoformat(),
+            'summary': {
+                'totalLogins': total_logins,
+                'failedLogins': failed_logins,
+                'loginSuccessRate': success_rate,
+                'adminActions': admin_actions,
+            },
+        }
+    elif report_type == 'content_usage':
+        domain_counts = {}
+        for attempt in attempts:
+            domain_name = (attempt.get('interest') or '').strip()
+            if not domain_name:
+                continue
+            domain_counts[domain_name] = domain_counts.get(domain_name, 0) + 1
+        data = {
+            'reportType': report_type,
+            'period': 'Last 30 days',
+            'generatedAt': end_date.isoformat(),
+            'summary': {
+                'totalQuizzesGenerated': total_attempts,
+                'activeDomains': len({(a.get('interest') or '').strip() for a in attempts if a.get('interest')}),
+                'mostUsedDomain': max(domain_counts, key=domain_counts.get) if domain_counts else 'N/A',
+            },
+        }
+    else:
+        data = {
+            'reportType': 'user_overview',
+            'period': 'Last 30 days',
+            'generatedAt': end_date.isoformat(),
+            'summary': {
+                'totalUsers': users_total,
+                'verifiedUsers': users_verified,
+                'pendingUsers': users_pending,
+                'newUsersThisMonth': sum(
+                    1
+                    for user in User.get_collection().find({}, {'createdAt': 1, 'created_at': 1, 'timestamp': 1})
+                    if (_user_created_at(user) and _user_created_at(user) >= start_date)
+                ),
+            },
+        }
+
     return jsonify({
         'success': True,
         'message': 'Detailed report retrieved successfully',
-        'data': {}
+        'data': data
     })

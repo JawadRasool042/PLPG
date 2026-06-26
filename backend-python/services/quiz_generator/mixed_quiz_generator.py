@@ -8,7 +8,7 @@ Generates quizzes with mixed question types:
 - Short Answer
 - Scenario-based
 
-Uses Gemini 1.5 Flash with strict JSON validation and a fallback
+Uses OpenAI with strict JSON validation and a fallback
 to the strict MCQ generator when needed.
 """
 
@@ -20,7 +20,9 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from google import genai
+import requests
+
+from utils.openai_request import chat_completions
 
 from .strict_quiz_generator import StrictQuizGenerator
 
@@ -37,12 +39,12 @@ class MixedQuizResult:
 
 
 class MixedQuizGenerator:
-    """Generates mixed-format quizzes using Gemini with validation and fallback."""
+    """Generates mixed-format quizzes using OpenAI with validation and fallback."""
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.client = genai.Client(api_key=self.api_key) if self.api_key else None
-        self.model = "gemini-1.5-flash"
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.client = bool(self.api_key)
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     def generate(
         self,
@@ -69,22 +71,22 @@ class MixedQuizGenerator:
         )
 
         try:
-            response = self.client.models.generate_content(
+            _, raw_response = chat_completions(
+                messages=[
+                    {"role": "system", "content": "Return ONLY valid JSON array."},
+                    {"role": "user", "content": prompt},
+                ],
+                api_key=self.api_key,
                 model=self.model,
-                contents=prompt,
-                config=genai.types.GenerateContentConfig(
-                    temperature=0.6,
-                    max_output_tokens=5000,
-                    response_mime_type="application/json",
-                ),
+                max_tokens=5000,
+                temperature=0.6,
+                timeout=30,
             )
-
-            raw_response = response.text or ""
             questions = self._parse_response(raw_response)
             self._validate_questions(questions, question_count)
 
             metadata = {
-                "source": "gemini",
+                "source": "openai",
                 "question_count": len(questions),
                 "difficulty": difficulty,
                 "topic": topic,
@@ -97,7 +99,7 @@ class MixedQuizGenerator:
 
     def _offline_fallback(self, topic: str, difficulty: str, question_count: int) -> MixedQuizResult:
         """
-        Deterministic generator when GEMINI_API_KEY is missing.
+        Deterministic generator when OPENAI_API_KEY is missing.
         Produces a mixed quiz with safe, generic-but-domain-scoped prompts.
         """
         # Keep it simple and robust: MCQ + TF + short answer + scenario rotation.
@@ -259,7 +261,7 @@ OUTPUT FORMAT (JSON ARRAY)
 
     def _parse_response(self, raw_response: str) -> List[Dict[str, Any]]:
         if not raw_response:
-            raise ValueError("Empty response from Gemini")
+            raise ValueError("Empty response from OpenAI")
         cleaned = raw_response.strip()
         if cleaned.startswith("```json"):
             cleaned = cleaned[7:]

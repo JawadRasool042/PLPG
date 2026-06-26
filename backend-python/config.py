@@ -8,10 +8,49 @@ Manages all application configuration from environment variables
 
 import os
 import warnings
-from dotenv import load_dotenv
+import secrets
+from pathlib import Path
+from typing import Optional
 
-# Load .env file
-load_dotenv()
+from dotenv import dotenv_values
+
+
+def _env_value_nonempty(d: dict, key: str) -> Optional[str]:
+    v = d.get(key)
+    if v is None or str(v).strip() == '':
+        return None
+    return str(v).strip()
+
+
+_BACKEND_ROOT = Path(__file__).resolve().parent
+_REPO_ROOT = _BACKEND_ROOT.parent
+
+
+def bootstrap_env_files() -> None:
+    """
+    Merge repo-root .env with backend-python/.env:
+    nonempty backend wins; otherwise use nonempty repo-root value.
+
+    Fixes backend-python/.env empty EMAIL_* shadowing real Gmail creds in repo/.env.
+    """
+    backend_file = _BACKEND_ROOT / '.env'
+    repo_file = _REPO_ROOT / '.env'
+
+    rb = dotenv_values(repo_file) if repo_file.exists() else {}
+    bb = dotenv_values(backend_file) if backend_file.exists() else {}
+    keys = set(rb.keys()) | set(bb.keys())
+
+    for k in keys:
+        if not k or k.startswith('\ufeff'):
+            continue
+        bv = _env_value_nonempty(bb, k)
+        rv = _env_value_nonempty(rb, k)
+        val = bv if bv is not None else rv
+        if val is not None:
+            os.environ[k] = val
+
+
+bootstrap_env_files()
 
 
 class Config:
@@ -46,11 +85,14 @@ class Config:
     JWT_VERSION = 1
     ADMIN_JWT_VERSION = 1
     
-    # Email Configuration
+    # Email (EMAIL_SERVICE=gmail presets smtp.gmail.com in email_service; see .env.example)
     EMAIL_SERVICE = os.getenv('EMAIL_SERVICE', 'gmail')
+    EMAIL_PROVIDER = os.getenv('EMAIL_PROVIDER', EMAIL_SERVICE)
     EMAIL_USER = os.getenv('EMAIL_USER', '')
     EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', '')
     EMAIL_FROM = os.getenv('EMAIL_FROM', EMAIL_USER)
+    SMTP_HOST = os.getenv('SMTP_HOST', 'smtp.gmail.com')
+    SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
     
     # Email Token Settings
     EMAIL_TOKEN_EXPIRY_HOURS = int(os.getenv('EMAIL_TOKEN_EXPIRY_HOURS', 24))
@@ -59,6 +101,9 @@ class Config:
     # Frontend URL
     FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:5173')
     APP_DOMAIN = os.getenv('APP_DOMAIN', 'localhost')
+
+    # Career / salary market (used by OpenAI learning-path generator)
+    CAREER_MARKET_REGION = os.getenv('CAREER_MARKET_REGION', 'Pakistan')
     
     # Production
     IS_PRODUCTION = os.getenv('FLASK_ENV', 'development') == 'production'
@@ -146,35 +191,43 @@ def get_config(config_name: str = None):
 def _check_security_config():
     """Check for weak security configuration"""
     config_obj = get_config()
+    allow_insecure_dev = os.getenv("ALLOW_INSECURE_DEV_SECRETS", "false").lower() == "true"
+
+    def _validate_secret(name: str, value: Optional[str]):
+        if not value:
+            return f"{name} is missing"
+        if len(value) < 32:
+            return f"{name} is too short (min 32 characters)"
+        return None
     
-    # Check for required secrets in production
-    if config_obj.IS_PRODUCTION:
-        missing_secrets = []
-        weak_secrets = []
-        
-        if not config_obj.JWT_SECRET:
-            missing_secrets.append('JWT_SECRET')
-        elif len(config_obj.JWT_SECRET) < 32:
-            weak_secrets.append('JWT_SECRET (too short, min 32 characters)')
-        
-        if not config_obj.JWT_REFRESH_SECRET:
-            missing_secrets.append('JWT_REFRESH_SECRET')
-        elif len(config_obj.JWT_REFRESH_SECRET) < 32:
-            weak_secrets.append('JWT_REFRESH_SECRET (too short, min 32 characters)')
-        
-        if not config_obj.SECRET_KEY:
-            missing_secrets.append('SECRET_KEY')
-        elif len(config_obj.SECRET_KEY) < 32:
-            weak_secrets.append('SECRET_KEY (too short, min 32 characters)')
-        
-        if missing_secrets or weak_secrets:
-            error_msg = '⚠️  SECURITY ERROR in production mode:\n'
-            if missing_secrets:
-                error_msg += f'Missing required environment variables:\n  - {", ".join(missing_secrets)}\n'
-            if weak_secrets:
-                error_msg += f'Weak secrets:\n  - {", ".join(weak_secrets)}\n'
-            error_msg += 'Use strong, random values (min 32 characters each)'
-            raise ValueError(error_msg)
+    issues = []
+    for secret_name, secret_value in (
+        ("JWT_SECRET", config_obj.JWT_SECRET),
+        ("JWT_REFRESH_SECRET", config_obj.JWT_REFRESH_SECRET),
+        ("SECRET_KEY", config_obj.SECRET_KEY),
+    ):
+        problem = _validate_secret(secret_name, secret_value)
+        if problem:
+            issues.append(problem)
+
+    if issues:
+        message = (
+            "Security configuration error:\n"
+            + "\n".join(f"  - {item}" for item in issues)
+            + "\nProvide strong environment-based values (at least 32 chars)."
+        )
+        if config_obj.IS_PRODUCTION or not allow_insecure_dev:
+            raise ValueError(message)
+        warnings.warn(
+            f"{message}\nALLOW_INSECURE_DEV_SECRETS=true is set; generating temporary in-memory secrets.",
+            RuntimeWarning,
+        )
+        if not config_obj.JWT_SECRET or len(config_obj.JWT_SECRET) < 32:
+            config_obj.JWT_SECRET = secrets.token_urlsafe(48)
+        if not config_obj.JWT_REFRESH_SECRET or len(config_obj.JWT_REFRESH_SECRET) < 32:
+            config_obj.JWT_REFRESH_SECRET = secrets.token_urlsafe(48)
+        if not config_obj.SECRET_KEY or len(config_obj.SECRET_KEY) < 32:
+            config_obj.SECRET_KEY = secrets.token_urlsafe(48)
 
 
 # Run security check on import

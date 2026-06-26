@@ -515,6 +515,7 @@ def get_interests():
             'primaryInterest': interest_assessment.get('primaryInterest'),
             'confidence': interest_assessment.get('confidence', 0),
             'allInterests': interest_assessment.get('allInterests', []),
+            'domainScores': interest_assessment.get('domainScores'),
             'completedAt': interest_assessment.get('completedAt').isoformat() if interest_assessment.get('completedAt') else None,
             'focusDomains': user.get('focusDomains', [])
         })

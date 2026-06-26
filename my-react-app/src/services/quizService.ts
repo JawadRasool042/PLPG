@@ -4,8 +4,8 @@
  */
 
 import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { parseApiError, throwParsedApiError } from './apiError';
+import { API_BASE_URL } from '../config/apiBase';
 
 // Quiz interfaces
 export interface Quiz {
@@ -15,6 +15,12 @@ export interface Quiz {
   totalQuestions: number;
   createdAt: string;
   questions: Question[];
+  isRetakeFrozen?: boolean;
+  remediationGate?: {
+    canRetake: boolean;
+    message?: string;
+    activeLock?: { attemptId?: string };
+  };
 }
 
 export interface Question {
@@ -34,6 +40,8 @@ export interface QuizAttempt {
   correctCount: number;
   totalQuestions: number;
   completedAt: string;
+  /** Present for AI quiz rows from unified `quiz_attempts` */
+  quizType?: string;
   results?: QuizResult[];
 }
 
@@ -94,6 +102,8 @@ export interface UserPerformance {
       quizzes: number;
     }>;
     recommendations: string[];
+    codingSuggestions?: string[];
+    improvementTopics?: string[];
   };
   updatedAt: string;
 }
@@ -158,6 +168,15 @@ export interface MixedQuizAttempt {
   score: number;
   summary?: string;
   submitted_at?: string;
+  results?: Array<{
+    id?: number;
+    type?: string;
+    user_answer?: string;
+    correct_answer?: string;
+    is_correct?: boolean;
+    explanation?: string;
+  }>;
+  remediation?: import('./remediationService').RemediationStatus;
 }
 
 export interface UserProfile {
@@ -237,7 +256,7 @@ export const generateQuiz = async (
     }
     throw new Error(response.data.message || 'Failed to generate quiz');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to generate quiz');
+    throwParsedApiError(error, 'Failed to generate quiz');
   }
 };
 
@@ -256,9 +275,14 @@ export const getQuiz = async (quizId: string): Promise<Quiz> => {
     }
     throw new Error(response.data.message || 'Failed to fetch quiz');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch quiz');
+    throwParsedApiError(error, 'Failed to fetch quiz');
   }
 };
+
+export interface SubmitQuizResponse {
+  attempt: QuizAttempt;
+  remediation?: import('./remediationService').RemediationStatus;
+}
 
 /**
  * Submit quiz answers
@@ -266,7 +290,7 @@ export const getQuiz = async (quizId: string): Promise<Quiz> => {
 export const submitQuiz = async (
   quizId: string,
   answers: Record<string, string>
-): Promise<QuizAttempt> => {
+): Promise<SubmitQuizResponse> => {
   try {
     const response = await axios.post(
       `${API_BASE_URL}/quiz/${quizId}/submit`,
@@ -275,11 +299,14 @@ export const submitQuiz = async (
     );
 
     if (response.data.success) {
-      return response.data.attempt;
+      return {
+        attempt: response.data.attempt,
+        remediation: response.data.remediation,
+      };
     }
     throw new Error(response.data.message || 'Failed to submit quiz');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to submit quiz');
+    throwParsedApiError(error, 'Failed to submit quiz');
   }
 };
 
@@ -298,7 +325,7 @@ export const getAvailableQuizzes = async (): Promise<QuizCategory[]> => {
     }
     throw new Error(response.data.message || 'Failed to fetch categories');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch categories');
+    throwParsedApiError(error, 'Failed to fetch categories');
   }
 };
 
@@ -317,7 +344,34 @@ export const getQuizHistory = async (limit: number = 20): Promise<QuizAttempt[]>
     }
     throw new Error(response.data.message || 'Failed to fetch quiz history');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch quiz history');
+    throwParsedApiError(error, 'Failed to fetch quiz history');
+  }
+};
+
+/**
+ * Get all stored quiz attempts for graphing (real-time DB source)
+ */
+export const getQuizHistoryGraph = async (limit: number = 0): Promise<QuizAttempt[]> => {
+  try {
+    const response = await axios.get(
+      `${API_BASE_URL}/quiz/history/graph?limit=${limit}`,
+      { headers: getAuthHeaders() }
+    );
+
+    if (response.data.success) {
+      return response.data.attempts;
+    }
+    throw new Error(response.data.message || 'Failed to fetch quiz graph history');
+  } catch (error: any) {
+    const parsed = parseApiError(error, 'Failed to fetch quiz graph history');
+
+    // Backward-compatible fallback when backend has not been restarted
+    // or runs an older version without /history/graph.
+    if (parsed.status === 404) {
+      return getQuizHistory(limit > 0 ? limit : 200);
+    }
+
+    throwParsedApiError(error, 'Failed to fetch quiz graph history');
   }
 };
 
@@ -337,7 +391,7 @@ export const getUserPerformance = async (interest?: string): Promise<UserPerform
     }
     throw new Error(response.data.message || 'Failed to fetch performance data');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch performance data');
+    throwParsedApiError(error, 'Failed to fetch performance data');
   }
 };
 
@@ -356,7 +410,7 @@ export const getQuizAttempt = async (attemptId: string): Promise<QuizAttempt> =>
     }
     throw new Error(response.data.message || 'Failed to fetch attempt');
   } catch (error: any) {
-    throw new Error(error.response?.data?.message || error.message || 'Failed to fetch attempt');
+    throwParsedApiError(error, 'Failed to fetch attempt');
   }
 };
 
@@ -462,13 +516,17 @@ export const submitMixedQuizAttempt = async (
     );
 
     if (response.data.success) {
-      return response.data.attempt || {
+      const attempt = response.data.attempt || {
         quiz_id: quizId,
         domain,
         difficulty,
         answers,
         score: response.data.score || response.data.attempt?.score || 0,
         summary: response.data.summary,
+      };
+      return {
+        ...attempt,
+        remediation: response.data.remediation,
       };
     }
     throw new Error(response.data.message || 'Failed to submit quiz attempt');
@@ -561,6 +619,7 @@ export default {
   submitQuiz,
   getAvailableQuizzes,
   getQuizHistory,
+  getQuizHistoryGraph,
   getUserPerformance,
   getQuizAttempt,
   generateMixedQuiz,

@@ -1,15 +1,394 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { getUserPerformance, getQuizHistory, type UserPerformance, type QuizAttempt } from '../../services/quizService';
+import { generateRoadmap, type RoadmapResponse } from '../../services/learningIntelligenceService';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import EmptyState from '../../components/EmptyState';
+import {
+  buildRoadmapScoresPayload,
+  getEffectivePrimaryInterest,
+  getInterestAssessmentDisplay,
+  getPercentage,
+  ratedDomainsFromScores,
+} from '../../utils/interestDisplay';
+import { hasCompletedDomainQuiz } from '../../utils/learningPathGate';
+import { computePathProgression, getDomainPerfSnapshot, resolveCurrentPhase } from '../../utils/learningPathProgress';
+import { normalizeRoadmapDomain } from '../../utils/roadmapTopics';
+
+const LEARNING_PROGRESS_WEEKS = 8;
+
+/** Plot layout in SVG user units (uniform scale via preserveAspectRatio meet — keeps circles round). */
+const LP_CHART = {
+  viewW: 100,
+  viewH: 88,
+  plotL: 14,
+  plotR: 94,
+  plotT: 10,
+  plotB: 62,
+  xLabelY: 72,
+  yLabelX: 11,
+} as const;
+
+function lpPlotX(weekIndex: number, numWeeks: number): number {
+  const { plotL, plotR } = LP_CHART;
+  if (numWeeks <= 1) return (plotL + plotR) / 2;
+  return plotL + (weekIndex / (numWeeks - 1)) * (plotR - plotL);
+}
+
+function lpPlotY(scorePercent: number): number {
+  const { plotT, plotB } = LP_CHART;
+  return plotT + ((100 - scorePercent) / 100) * (plotB - plotT);
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const day = x.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function attemptScorePercent(a: QuizAttempt): number {
+  if (a.totalQuestions > 0) {
+    return Math.round((a.correctCount / a.totalQuestions) * 100);
+  }
+  const s = Number(a.score);
+  return Number.isFinite(s) ? Math.max(0, Math.min(100, Math.round(s))) : 0;
+}
+
+type WeeklyBucket = {
+  weekStart: Date;
+  label: string;
+  average: number | null;
+  attempts: number;
+};
+
+type WeeklyProgressModel = {
+  buckets: WeeklyBucket[];
+  lineSegments: { x: number; y: number; score: number }[][];
+  trendDelta: number | null;
+  trendLabel: 'improving' | 'declining' | 'steady';
+  weekStreak: number;
+  thisWeekAverage: number | null;
+  improvementDisplay: string;
+  hasLine: boolean;
+  totalAttemptsInWindow: number;
+};
+
+function buildWeeklyProgress(attempts: QuizAttempt[], numWeeks: number): WeeklyProgressModel {
+  const now = new Date();
+  const currentWeekStart = startOfWeekMonday(now);
+  const buckets: WeeklyBucket[] = [];
+  for (let i = numWeeks - 1; i >= 0; i--) {
+    const ws = new Date(currentWeekStart);
+    ws.setDate(ws.getDate() - i * 7);
+    const label = ws.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    buckets.push({ weekStart: ws, label, average: null, attempts: 0 });
+  }
+
+  const sums = buckets.map(() => ({ sum: 0, n: 0 }));
+  for (const a of attempts) {
+    const t = new Date(a.completedAt);
+    if (Number.isNaN(t.getTime())) continue;
+    const ws = startOfWeekMonday(t);
+    const idx = buckets.findIndex((b) => b.weekStart.getTime() === ws.getTime());
+    if (idx === -1) continue;
+    sums[idx].sum += attemptScorePercent(a);
+    sums[idx].n += 1;
+    buckets[idx].attempts += 1;
+  }
+  buckets.forEach((b, i) => {
+    if (sums[i].n > 0) b.average = Math.round(sums[i].sum / sums[i].n);
+  });
+
+  const lineSegments: { x: number; y: number; score: number }[][] = [];
+  let cur: { x: number; y: number; score: number }[] = [];
+  for (let i = 0; i < numWeeks; i++) {
+    const avg = buckets[i].average;
+    if (avg == null) {
+      if (cur.length) {
+        lineSegments.push(cur);
+        cur = [];
+      }
+      continue;
+    }
+    cur.push({ x: lpPlotX(i, numWeeks), y: lpPlotY(avg), score: avg });
+  }
+  if (cur.length) lineSegments.push(cur);
+
+  const nonNullIdx = buckets.map((b, i) => (b.average != null ? i : -1)).filter((i) => i >= 0);
+  let trendDelta: number | null = null;
+  if (nonNullIdx.length >= 2) {
+    const first = nonNullIdx[0];
+    const last = nonNullIdx[nonNullIdx.length - 1];
+    trendDelta = (buckets[last].average ?? 0) - (buckets[first].average ?? 0);
+  }
+
+  let trendLabel: WeeklyProgressModel['trendLabel'] = 'steady';
+  if (trendDelta != null) {
+    if (trendDelta > 2) trendLabel = 'improving';
+    else if (trendDelta < -2) trendLabel = 'declining';
+  }
+
+  let weekStreak = 0;
+  for (let i = numWeeks - 1; i >= 0; i--) {
+    if (buckets[i].attempts > 0) weekStreak += 1;
+    else break;
+  }
+
+  const thisWeekAverage = buckets[numWeeks - 1]?.average ?? null;
+  const improvementDisplay =
+    trendDelta == null ? '—' : `${trendDelta > 0 ? '+' : ''}${Math.round(trendDelta)}%`;
+
+  const totalAttemptsInWindow = buckets.reduce((s, b) => s + b.attempts, 0);
+  const hasLine = lineSegments.some((s) => s.length >= 2);
+
+  return {
+    buckets,
+    lineSegments,
+    trendDelta,
+    trendLabel,
+    weekStreak,
+    thisWeekAverage,
+    improvementDisplay,
+    hasLine,
+    totalAttemptsInWindow,
+  };
+}
+
+function LearningProgressCard({
+  weeklyProgress,
+  chartUid,
+}: {
+  weeklyProgress: WeeklyProgressModel;
+  chartUid: string;
+}) {
+  const { buckets, lineSegments, trendLabel, weekStreak, thisWeekAverage, improvementDisplay, totalAttemptsInWindow } =
+    weeklyProgress;
+
+  const trendPill =
+    trendLabel === 'improving'
+      ? {
+          text: 'Improving',
+          className: 'bg-green-50 text-green-700',
+          icon: (
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+          ),
+        }
+      : trendLabel === 'declining'
+        ? {
+            text: 'Declining',
+            className: 'bg-rose-50 text-rose-700',
+            icon: (
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+            ),
+          }
+        : {
+            text: 'Steady',
+            className: 'bg-slate-100 text-slate-700',
+            icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />,
+          };
+
+  const lineGradId = `lp-line-${chartUid}`;
+  const areaGradId = `lp-area-${chartUid}`;
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Learning Progress</h2>
+          <p className="text-slate-600">Your performance trend over time (live from quiz history)</p>
+        </div>
+        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${trendPill.className}`}>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {trendPill.icon}
+          </svg>
+          {trendPill.text}
+        </span>
+      </div>
+
+      <div className="relative h-80 bg-gradient-to-br from-slate-50 to-indigo-50 rounded-xl p-4 sm:p-6 border border-slate-200 flex items-center justify-center">
+        {totalAttemptsInWindow === 0 && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70 px-4 text-center text-sm text-slate-600">
+            No quiz attempts in the last {LEARNING_PROGRESS_WEEKS} weeks. Take a quiz to see your trend here.
+          </div>
+        )}
+        <svg
+          className="w-full max-w-3xl h-72 sm:h-80"
+          viewBox={`0 0 ${LP_CHART.viewW} ${LP_CHART.viewH}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label="Weekly average quiz score chart"
+        >
+          <defs>
+            <linearGradient id={lineGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#6366f1" />
+              <stop offset="100%" stopColor="#a855f7" />
+            </linearGradient>
+            <linearGradient id={areaGradId} x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#6366f1" stopOpacity="0.28" />
+              <stop offset="100%" stopColor="#a855f7" stopOpacity="0.06" />
+            </linearGradient>
+          </defs>
+
+          {[100, 75, 50, 25, 0].map((g) => (
+            <g key={g}>
+              <line
+                x1={LP_CHART.plotL}
+                x2={LP_CHART.plotR}
+                y1={lpPlotY(g)}
+                y2={lpPlotY(g)}
+                stroke="#e2e8f0"
+                strokeWidth={0.35}
+              />
+              <text
+                x={LP_CHART.yLabelX}
+                y={lpPlotY(g)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fill="#64748b"
+                fontSize={3.4}
+              >
+                {g}%
+              </text>
+            </g>
+          ))}
+
+          {buckets.map((b, i) => (
+            <text
+              key={`xl-${b.weekStart.getTime()}`}
+              x={lpPlotX(i, LEARNING_PROGRESS_WEEKS)}
+              y={LP_CHART.xLabelY}
+              textAnchor="middle"
+              fill="#64748b"
+              fontSize={3}
+            >
+              {b.label}
+            </text>
+          ))}
+
+          {lineSegments.map((seg, si) => {
+            if (!seg.length) return null;
+            const bottom = LP_CHART.plotB;
+            if (seg.length === 1) {
+              const p = seg[0];
+              return (
+                <g key={si}>
+                  <line
+                    x1={p.x}
+                    x2={p.x}
+                    y1={p.y}
+                    y2={bottom}
+                    stroke="#c7d2fe"
+                    strokeWidth={0.45}
+                    strokeDasharray="1.2 1.2"
+                  />
+                  <circle cx={p.x} cy={p.y} r={3.2} fill="white" stroke="#6366f1" strokeWidth={1.1}>
+                    <title>{`${p.score}% avg this week`}</title>
+                  </circle>
+                  <circle cx={p.x} cy={p.y} r={1.35} fill="#a855f7" opacity={0.9} />
+                </g>
+              );
+            }
+            const lineD = seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+            const areaD =
+              seg.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') +
+              ` L ${seg[seg.length - 1].x} ${bottom} L ${seg[0].x} ${bottom} Z`;
+            return (
+              <g key={si}>
+                <path d={areaD} fill={`url(#${areaGradId})`} />
+                <path
+                  d={lineD}
+                  fill="none"
+                  stroke={`url(#${lineGradId})`}
+                  strokeWidth={1.35}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                {seg.map((p, pi) => (
+                  <circle key={pi} cx={p.x} cy={p.y} r={2.8} fill="white" stroke="#6366f1" strokeWidth={1}>
+                    <title>{`${p.score}%`}</title>
+                  </circle>
+                ))}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <div className="mt-8 grid md:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {weeklyProgress.trendLabel === 'declining' ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                )}
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <p
+                className={`text-2xl font-bold tabular-nums ${
+                  weeklyProgress.trendDelta != null && weeklyProgress.trendDelta < 0 ? 'text-rose-700' : 'text-slate-900'
+                }`}
+              >
+                {improvementDisplay}
+              </p>
+              <p className="text-xs text-slate-600">Improvement (first → last week with data)</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{weekStreak}</p>
+              <p className="text-xs text-slate-600">Week streak (this week → back)</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-4 border border-yellow-100">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-yellow-600 rounded-lg flex items-center justify-center shrink-0">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+                {thisWeekAverage != null ? `${thisWeekAverage}%` : '—'}
+              </p>
+              <p className="text-xs text-slate-600">This calendar week (avg)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 const Dashboard: React.FC = () => {
   const { isAuthenticated, user, hasCompletedOnboarding, userInterests } = useStore();
   const navigate = useNavigate();
   const [performance, setPerformance] = useState<UserPerformance | null>(null);
   const [history, setHistory] = useState<QuizAttempt[]>([]);
+  const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(null);
+  const [pathIntelError, setPathIntelError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dismissedMotivation, setDismissedMotivation] = useState(false);
 
@@ -23,46 +402,156 @@ const Dashboard: React.FC = () => {
   ];
   const todayMsg = motivationalMessages[new Date().getDay() % motivationalMessages.length];
 
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      loadData();
-    }
-  }, [isAuthenticated, user]);
+  const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
+  const primaryInterest = useMemo(() => getEffectivePrimaryInterest(userInterests), [userInterests]);
+  const learningPathUnlocked = useMemo(
+    () => hasCompletedDomainQuiz(performance, normalizeRoadmapDomain(primaryInterest)),
+    [performance, primaryInterest],
+  );
 
-  const loadData = async () => {
+  const topInterestRows = useMemo(() => {
+    if (!userInterests) return [];
+    const rated = ratedDomainsFromScores(userInterests.domainScores);
+    if (rated.length) {
+      return rated.slice(0, 3).map((r) => ({
+        domain: r.domain,
+        pct: getPercentage(r.score),
+      }));
+    }
+    return userInterests.allInterests.slice(0, 3).map((i) => ({
+      domain: i.domain,
+      pct: getPercentage(i.confidence * 10),
+    }));
+  }, [userInterests]);
+
+  const domainScoresSignature = useMemo(
+    () => JSON.stringify(userInterests?.domainScores ?? {}),
+    [userInterests?.domainScores],
+  );
+
+  const loadData = useCallback(async () => {
     try {
       const [perf, hist] = await Promise.allSettled([
         getUserPerformance(),
-        getQuizHistory(5),
+        getQuizHistory(250),
       ]);
       if (perf.status === 'fulfilled') setPerformance(perf.value);
       if (hist.status === 'fulfilled') setHistory(hist.value);
+
+      const perfData = perf.status === 'fulfilled' ? perf.value : null;
+
+      if (hasCompletedOnboarding && userInterests) {
+        const primary = getEffectivePrimaryInterest(userInterests);
+        if (!primary) {
+          setPathIntel(null);
+        } else if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) {
+          setPathIntel(null);
+          setPathIntelError(null);
+        } else {
+        setPathIntelError(null);
+        try {
+          const secondary = (userInterests.allInterests || [])
+            .map((i) => i.domain)
+            .filter(
+              (d, idx, arr) =>
+                Boolean(d) && d !== primary && arr.indexOf(d) === idx,
+            )
+            .slice(0, 5);
+          const engagement = getInterestAssessmentDisplay(userInterests).confidenceRatio;
+          const scoresPayload = buildRoadmapScoresPayload(userInterests.domainScores);
+          const live = await generateRoadmap({
+            domain: primary,
+            primary_interest: primary,
+            secondary_domains: secondary,
+            user_id: user?.id,
+            user: {
+              weekly_availability_hours: 6,
+              learning_style: 'mixed',
+              known: userInterests.assessmentContext?.known || '',
+              want: userInterests.assessmentContext?.want || '',
+              goals: userInterests.assessmentContext?.goals || '',
+              learning_goals: userInterests.assessmentContext?.goals || '',
+              assessment_tags: userInterests.assessmentTags || [],
+            },
+            engagement_score: engagement,
+            interest_strength: engagement,
+            ...(scoresPayload ? { scores: scoresPayload } : {}),
+          });
+          setPathIntel(live);
+        } catch (e: unknown) {
+          setPathIntel(null);
+          setPathIntelError(e instanceof Error ? e.message : 'Could not load live path');
+        }
+        }
+      }
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [hasCompletedOnboarding, userInterests, domainScoresSignature, user?.id]);
 
-  // Generate personalized learning path based on interests
-  const getLearningPath = () => {
-    if (!userInterests) return [];
-    const primary = userInterests.primaryInterest;
-    const paths: Record<string, { steps: string[]; icon: string }> = {
-      'AI & Machine Learning': { icon: '🤖', steps: ['Python Basics', 'Data Structures', 'Statistics', 'ML Algorithms', 'Deep Learning', 'Projects'] },
-      'Web Development': { icon: '🌐', steps: ['HTML & CSS', 'JavaScript', 'React/Vue', 'Node.js', 'Databases', 'Deploy'] },
-      'Data Science': { icon: '📊', steps: ['Python', 'Pandas & NumPy', 'Data Viz', 'Statistics', 'ML Models', 'Capstone'] },
-      'Cybersecurity': { icon: '🔐', steps: ['Networking', 'Linux Basics', 'Ethical Hacking', 'Cryptography', 'Pen Testing', 'Certifications'] },
-      'Coding': { icon: '💻', steps: ['Programming Basics', 'Algorithms', 'Data Structures', 'OOP', 'Design Patterns', 'Projects'] },
-      'Mobile Development': { icon: '📱', steps: ['UI/UX Basics', 'React Native', 'APIs', 'State Management', 'Testing', 'Publish'] },
-      'Cloud Computing': { icon: '☁️', steps: ['Cloud Basics', 'AWS/Azure', 'Networking', 'DevOps', 'Security', 'Certifications'] },
-      'Game Development': { icon: '🎮', steps: ['Game Design', 'Unity/Unreal', 'C# Basics', 'Physics', '3D Modeling', 'Publish'] },
-    };
-    return paths[primary] || { icon: '📚', steps: ['Fundamentals', 'Core Concepts', 'Practice', 'Projects', 'Advanced', 'Mastery'] };
-  };
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      void loadData();
+    }
+  }, [isAuthenticated, user, loadData]);
 
-  const learningPath = getLearningPath();
-  const completedSteps = performance ? Math.min(Math.floor(performance.overallStats.totalQuizzes / 2), (learningPath as any).steps?.length ?? 0) : 0;
+  const learningPathSteps = useMemo(() => {
+    if (!learningPathUnlocked) return [];
+    const r = pathIntel?.roadmap as
+      | {
+          basic?: { topics?: string[]; all_topics?: string[] };
+          beginner?: { topics?: string[]; all_topics?: string[] };
+          intermediate?: { topics?: string[]; all_topics?: string[] };
+          advanced?: { topics?: string[]; all_topics?: string[] };
+          expert?: { topics?: string[]; all_topics?: string[] };
+          next_step?: { title?: string };
+        }
+      | undefined;
+    if (r) {
+      const steps: string[] = [];
+      const bTopics = r.basic?.all_topics?.length ? r.basic.all_topics : r.basic?.topics ?? r.beginner?.all_topics ?? r.beginner?.topics;
+      (bTopics || []).slice(0, 2).forEach((t) => steps.push(`Build: ${t}`));
+      const ns = r.next_step?.title;
+      if (ns) steps.push(`Next: ${ns}`);
+      const iTopics = r.intermediate?.all_topics?.length ? r.intermediate.all_topics : r.intermediate?.topics;
+      (iTopics || []).slice(0, 2).forEach((t) => steps.push(`Grow: ${t}`));
+      const out = steps.slice(0, 6);
+      if (out.length) return out;
+    }
+    return [
+      ...(userInterests?.allInterests?.slice(0, 2).map((i) => `Focus: ${i.domain}`) || []),
+      ...(performance?.analysis?.recommendations?.slice(0, 2) || []),
+      ...(Object.keys(performance?.byInterest || {}).slice(0, 2).map((k) => `Practice: ${k}`) || []),
+    ].slice(0, 6);
+  }, [pathIntel, performance, userInterests, learningPathUnlocked]);
+
+  const completedSteps = useMemo(() => {
+    if (!learningPathSteps.length) return 0;
+    const primary = normalizeRoadmapDomain(primaryInterest || '');
+    const perf = getDomainPerfSnapshot(performance, primary);
+    const adaptiveState = (
+      pathIntel?.roadmap as { adaptive_state?: Record<string, number | string> } | undefined
+    )?.adaptive_state;
+    const totalPhases = Math.max(learningPathSteps.length, 1);
+    const currentPhase = resolveCurrentPhase(totalPhases, perf, adaptiveState);
+    const liveProgress = computePathProgression(totalPhases, currentPhase, perf);
+    const fromLive = Math.round(liveProgress * learningPathSteps.length);
+    const fromQuizzes = performance
+      ? Math.min(Math.floor(performance.overallStats.totalQuizzes / 2), learningPathSteps.length)
+      : 0;
+    if (pathIntel?.roadmap || performance) {
+      return Math.min(learningPathSteps.length, Math.max(fromLive, fromQuizzes));
+    }
+    return fromQuizzes;
+  }, [learningPathSteps.length, pathIntel, performance, primaryInterest]);
+
+  const weeklyProgress = useMemo(
+    () => buildWeeklyProgress(history, LEARNING_PROGRESS_WEEKS),
+    [history],
+  );
+  const learningChartUid = React.useId().replace(/:/g, '');
 
   // Download final results as text file
   const handleDownloadResults = () => {
@@ -84,8 +573,8 @@ const Dashboard: React.FC = () => {
       `Overall Accuracy: ${performance.overallStats.totalQuestions > 0 ? Math.round((performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100) : 0}%`,
       ``,
       `=== LEARNING INTERESTS ===`,
-      userInterests ? `Primary Interest: ${userInterests.primaryInterest} (${Math.round(userInterests.confidence * 100)}% confidence)` : 'Not assessed yet',
-      ...(userInterests?.allInterests.slice(0, 5).map(i => `  - ${i.domain}: ${Math.round(i.confidence * 100)}%`) ?? []),
+      userInterests ? `Primary Interest: ${interestUi.primary} (${interestUi.confidencePct}% confidence)` : 'Not assessed yet',
+      ...(userInterests?.allInterests.slice(0, 5).map(i => `  - ${i.domain}: ${getPercentage(i.confidence * 10)}%`) ?? []),
       ``,
       `=== PERFORMANCE BY TOPIC ===`,
       ...Object.entries(performance.byInterest).map(([topic, stats]) =>
@@ -171,11 +660,11 @@ const Dashboard: React.FC = () => {
                   🎯 Start Your Learning Journey
                 </h2>
                 <p className="text-indigo-100 mb-6 text-lg leading-relaxed">
-                  Welcome to your dashboard! Let's personalize your experience. Start with the <strong>Interest Checker</strong> to tell us what topics you enjoy. We'll generate a short, personalized quiz from your choices. Complete it to unlock a tailored learning path designed just for you.
+                  Welcome to your dashboard! Start with the <strong>Interest Checker</strong> so we can store your preferences in your profile and generate quizzes and learning paths based on your own data.
                 </p>
                 <div className="flex flex-wrap gap-4">
                   <button
-                    onClick={() => navigate('/interest-check')}
+                    onClick={() => navigate('/quizzes/interest-check')}
                     className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-3"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +697,7 @@ const Dashboard: React.FC = () => {
                 </p>
               </div>
               <button
-                onClick={() => navigate('/interest-check')}
+                onClick={() => navigate('/quizzes/interest-check')}
                 className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition-colors flex items-center gap-2"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -216,12 +705,21 @@ const Dashboard: React.FC = () => {
                 </svg>
                 Retake Assessment
               </button>
-              <button
-                onClick={() => navigate('/learning-path')}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 hover:bg-indigo-700"
-              >
-                View Full Path →
-              </button>            </div>
+              {learningPathUnlocked ? (
+                <button
+                  onClick={() => navigate('/learning-path')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 hover:bg-indigo-700"
+                >
+                  View Full Path →
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/quizzes')}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 hover:bg-indigo-700"
+                >
+                  Take Quiz to Unlock Path
+                </button>
+              )}            </div>
 
             <div className="grid md:grid-cols-2 gap-6">
               {/* Primary Interest */}
@@ -234,18 +732,18 @@ const Dashboard: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-sm text-indigo-600 font-medium">Primary Interest</p>
-                    <h3 className="text-xl font-bold text-slate-900">{userInterests.primaryInterest}</h3>
+                    <h3 className="text-xl font-bold text-slate-900">{interestUi.primary}</h3>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-white rounded-full h-3 overflow-hidden">
                     <div 
                       className="bg-gradient-to-r from-indigo-600 to-purple-600 h-full rounded-full transition-all"
-                      style={{ width: `${Math.round(userInterests.confidence * 100)}%` }}
+                      style={{ width: `${interestUi.confidencePct}%` }}
                     ></div>
                   </div>
                   <span className="text-sm font-semibold text-indigo-600">
-                    {Math.round(userInterests.confidence * 100)}%
+                    {interestUi.confidencePct}%
                   </span>
                 </div>
               </div>
@@ -254,12 +752,10 @@ const Dashboard: React.FC = () => {
               <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
                 <h3 className="text-sm font-semibold text-slate-700 mb-4">Your Top Interests</h3>
                 <div className="space-y-3">
-                  {userInterests.allInterests.slice(0, 3).map((interest, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <span className="text-slate-900 font-medium">{interest.domain}</span>
-                      <span className="text-sm text-slate-600">
-                        {Math.round(interest.confidence * 100)}%
-                      </span>
+                  {topInterestRows.map((row) => (
+                    <div key={row.domain} className="flex items-center justify-between">
+                      <span className="text-slate-900 font-medium">{row.domain}</span>
+                      <span className="text-sm text-slate-600">{row.pct}%</span>
                     </div>
                   ))}
                 </div>
@@ -285,25 +781,28 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Personalized Learning Path (#5) */}
-        {hasCompletedOnboarding && userInterests && (learningPath as any).steps && (
+        {/* Personalized Learning Path — after quiz */}
+        {hasCompletedOnboarding && userInterests && learningPathUnlocked && learningPathSteps.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-900">
-                  {(learningPath as any).icon} Your Learning Path
+                  🧭 Your Learning Path
                 </h2>
-                <p className="text-slate-600 mt-1">Personalized for <strong>{userInterests.primaryInterest}</strong></p>
+                <p className="text-slate-600 mt-1">
+                  Live roadmap for <strong>{interestUi.primary}</strong>
+                  {pathIntel?.roadmap ? ' • synced from your assessment + adaptive engine' : ''}
+                </p>
               </div>
               <button
-                onClick={() => navigate('/quizzes')}
+                onClick={() => navigate('/learning-path')}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
               >
-                Continue Learning →
+                Full path →
               </button>
             </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
-              {(learningPath as any).steps.map((step: string, i: number) => (
+              {learningPathSteps.map((step: string, i: number) => (
                 <React.Fragment key={i}>
                   <div className={`flex-shrink-0 flex flex-col items-center gap-2`}>
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all ${
@@ -315,11 +814,11 @@ const Dashboard: React.FC = () => {
                     }`}>
                       {i < completedSteps ? '✓' : i + 1}
                     </div>
-                    <span className={`text-xs font-medium text-center w-16 ${i <= completedSteps ? 'text-slate-700' : 'text-slate-400'}`}>
+                    <span className={`text-xs font-medium text-center w-20 sm:w-24 ${i <= completedSteps ? 'text-slate-700' : 'text-slate-400'}`}>
                       {step}
                     </span>
                   </div>
-                  {i < (learningPath as any).steps.length - 1 && (
+                  {i < learningPathSteps.length - 1 && (
                     <div className={`flex-shrink-0 h-0.5 w-8 mt-[-16px] ${i < completedSteps ? 'bg-emerald-400' : 'bg-slate-200'}`} />
                   )}
                 </React.Fragment>
@@ -329,13 +828,51 @@ const Dashboard: React.FC = () => {
               <div className="flex-1 bg-slate-100 rounded-full h-2">
                 <div
                   className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-2 rounded-full transition-all"
-                  style={{ width: `${(completedSteps / (learningPath as any).steps.length) * 100}%` }}
+                  style={{ width: `${(completedSteps / Math.max(1, learningPathSteps.length)) * 100}%` }}
                 />
               </div>
               <span className="text-sm font-semibold text-slate-700">
-                {completedSteps}/{(learningPath as any).steps.length} completed
+                {completedSteps}/{learningPathSteps.length} completed
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Live résumé / CV talking points — after quiz unlocks path */}
+        {hasCompletedOnboarding && userInterests && learningPathUnlocked && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
+            <h2 className="text-2xl font-bold text-slate-900 mb-1">Résumé talking points</h2>
+            <p className="text-slate-600 text-sm mb-4">
+              Pulled dynamically from your profile text, roadmap milestones, and skill gaps (not fixed copy).
+            </p>
+            {pathIntelError && (
+              <p className="text-sm text-amber-700 mb-3">{pathIntelError}</p>
+            )}
+            {(pathIntel?.resume_outline?.bullets?.length ?? 0) > 0 ? (
+              <ul className="space-y-2 text-slate-700 text-sm">
+                {(pathIntel?.resume_outline?.bullets ?? []).slice(0, 10).map((b, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="text-indigo-500 font-bold">•</span>
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              !pathIntelError && (
+                <p className="text-sm text-slate-500">
+                  Loading résumé hints… Fill “known / want / goals” in the interest assessment for richer bullets.
+                </p>
+              )
+            )}
+            {!!pathIntel?.resume_outline?.keywords?.length && (
+              <div className="flex flex-wrap gap-2 mt-4">
+                {pathIntel.resume_outline.keywords.slice(0, 10).map((kw) => (
+                  <span key={kw} className="text-xs bg-slate-100 text-slate-800 px-2.5 py-1 rounded-full border border-slate-200">
+                    {kw}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -439,7 +976,7 @@ const Dashboard: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
               <h2 className="text-2xl font-bold text-slate-900 mb-6">Your Performance</h2>
               
-              <div className="grid md:grid-cols-4 gap-6 mb-8">
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
                     <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -475,20 +1012,6 @@ const Dashboard: React.FC = () => {
                   </p>
                   <p className="text-sm text-slate-600">Best Score</p>
                 </div>
-
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-purple-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1">
-                    {performance.overallStats.totalQuestions > 0
-                      ? Math.round((performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100)
-                      : 0}%
-                  </p>
-                  <p className="text-sm text-slate-600">Accuracy</p>
-                </div>
               </div>
 
               <div className="flex gap-3">
@@ -512,162 +1035,10 @@ const Dashboard: React.FC = () => {
             </div>
         )}
 
-        {/* Learning Curve Chart - Show for all users with completed onboarding */}
+        {/* Learning curve — real quiz history, last 8 calendar weeks (Mon-start) */}
         {hasCompletedOnboarding && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">Learning Progress</h2>
-                <p className="text-slate-600">Your performance trend over time</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-sm font-medium">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                  Improving
-                </span>
-              </div>
-            </div>
-
-            {/* Chart Container */}
-            <div className="relative h-80 bg-gradient-to-br from-slate-50 to-indigo-50 rounded-xl p-6 pb-12 border border-slate-200">
-              {/* Y-axis labels */}
-              <div className="absolute left-2 top-6 bottom-12 w-10 flex flex-col justify-between text-xs text-slate-500">
-                <span>100%</span>
-                <span>75%</span>
-                <span>50%</span>
-                <span>25%</span>
-                <span>0%</span>
-              </div>
-
-              {/* Chart area */}
-              <div className="ml-14 mr-4 h-full pb-8 relative">
-                {/* Grid lines */}
-                <div className="absolute inset-0 flex flex-col justify-between pb-8">
-                  {[0, 1, 2, 3, 4].map((i) => (
-                    <div key={i} className="border-t border-slate-200"></div>
-                  ))}
-                </div>
-
-                {/* SVG Line Chart */}
-                <svg className="absolute inset-0 w-full pb-8" style={{ height: 'calc(100% - 2rem)' }} viewBox="0 0 100 100" preserveAspectRatio="none">
-                  {/* Gradient definition */}
-                  <defs>
-                    <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#6366f1" />
-                      <stop offset="100%" stopColor="#a855f7" />
-                    </linearGradient>
-                    <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                      <stop offset="100%" stopColor="#a855f7" stopOpacity="0.05" />
-                    </linearGradient>
-                  </defs>
-
-                  {/* Area under curve */}
-                  <path
-                    d="M 0 20 L 14.28 25 L 28.56 30 L 42.84 35 L 57.12 45 L 71.4 50 L 85.68 65 L 100 80 L 100 100 L 0 100 Z"
-                    fill="url(#areaGradient)"
-                  />
-
-                  {/* Line */}
-                  <path
-                    d="M 0 20 L 14.28 25 L 28.56 30 L 42.84 35 L 57.12 45 L 71.4 50 L 85.68 65 L 100 80"
-                    fill="none"
-                    stroke="url(#lineGradient)"
-                    strokeWidth="0.8"
-                    vectorEffect="non-scaling-stroke"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-
-                {/* Data points - positioned absolutely */}
-                <div className="absolute inset-0 pb-8" style={{ height: 'calc(100% - 2rem)' }}>
-                  {[
-                    { x: 0, y: 20, label: 'Week 1' },
-                    { x: 14.28, y: 25, label: 'Week 2' },
-                    { x: 28.56, y: 30, label: 'Week 3' },
-                    { x: 42.84, y: 35, label: 'Week 4' },
-                    { x: 57.12, y: 45, label: 'Week 5' },
-                    { x: 71.4, y: 50, label: 'Week 6' },
-                    { x: 85.68, y: 65, label: 'Week 7' },
-                    { x: 100, y: 80, label: 'Week 8' },
-                  ].map((point, i) => (
-                    <div
-                      key={i}
-                      className="absolute"
-                      style={{
-                        left: `${point.x}%`,
-                        top: `${point.y}%`,
-                        transform: 'translate(-50%, -50%)'
-                      }}
-                    >
-                      <div className="w-3 h-3 bg-white border-2 border-indigo-600 rounded-full hover:w-4 hover:h-4 transition-all cursor-pointer shadow-sm"></div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* X-axis labels */}
-                <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-slate-500">
-                  <span>Week 1</span>
-                  <span>Week 2</span>
-                  <span>Week 3</span>
-                  <span>Week 4</span>
-                  <span>Week 5</span>
-                  <span>Week 6</span>
-                  <span>Week 7</span>
-                  <span>Week 8</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Legend and Stats */}
-            <div className="mt-8 grid md:grid-cols-3 gap-4">
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900">+15%</p>
-                    <p className="text-xs text-slate-600">Improvement</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900">8</p>
-                    <p className="text-xs text-slate-600">Week Streak</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-4 border border-yellow-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-yellow-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-slate-900">85%</p>
-                    <p className="text-xs text-slate-600">This Week</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-             
+            <LearningProgressCard weeklyProgress={weeklyProgress} chartUid={learningChartUid} />
           </div>
         )}
 

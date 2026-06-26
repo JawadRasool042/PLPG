@@ -7,7 +7,7 @@ const AdminLogin: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, error, loading } = useAdminStore();
-  const [email, setEmail] = useState('admin@plpg.ai');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('Admin@12345');
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
@@ -91,7 +91,7 @@ const AdminLogin: React.FC = () => {
                     setEmail(e.target.value);
                     setEmailError('');
                   }}
-                  placeholder="admin@plpg.ai"
+                  placeholder="Enter your admin email"
                   required
                 />
               </div>

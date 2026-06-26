@@ -18,6 +18,7 @@ flask-mail
 # Validation
 email-validator
 pydantic
+jsonschema
 
 # Machine Learning
 pandas
@@ -26,8 +27,8 @@ matplotlib
 joblib
 numpy
 
-# AI/ML - Google Gemini
-google-generativeai
+# AI/ML - OpenAI
+openai
 
 # HTTP Client
 requests

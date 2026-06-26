@@ -12,7 +12,6 @@ interface AdminState {
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
-  setHardcodedAdmin: () => void;
 }
 
 export const useAdminStore = create<AdminState>()(
@@ -46,12 +45,6 @@ export const useAdminStore = create<AdminState>()(
           set({ loading: true });
           const token = getAdminAccessToken();
           if (!token) {
-            // Check if hardcoded admin is set
-            const state = useAdminStore.getState();
-            if (state.admin?.email === 'admin@local') {
-              set({ loading: false });
-              return;
-            }
             set({ admin: null, isAuthenticated: false, loading: false });
             return;
           }
@@ -61,22 +54,6 @@ export const useAdminStore = create<AdminState>()(
           set({ admin: null, isAuthenticated: false, loading: false });
           clearAdminTokens();
         }
-      },
-
-      setHardcodedAdmin: () => {
-        set({
-          admin: {
-            id: 'local-admin',
-            name: 'Admin',
-            email: 'admin@local',
-            role: { _id: 'super_admin', name: 'super_admin' },
-            permissions: [],
-            status: 'active',
-          } as AdminProfile,
-          isAuthenticated: true,
-          loading: false,
-          error: null,
-        });
       },
     }),
     {

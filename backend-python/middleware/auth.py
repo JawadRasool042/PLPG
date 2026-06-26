@@ -7,15 +7,18 @@ JWT token validation and role-based access control
 """
 
 import jwt
+import logging
 from functools import wraps
 from flask import request, jsonify, g
 from datetime import datetime
+from typing import Any, Optional
 
 from config import get_config
 from models.user import User
 from utils.token_utils import verify_user_token
 
 config = get_config()
+logger = logging.getLogger(__name__)
 
 
 def get_client_ip():
@@ -119,13 +122,27 @@ def authenticate_token(f):
             }), 401
         
         except Exception as e:
-            print(f'Auth middleware error: {e}')
+            logger.exception('Auth middleware error: %s', e)
             return jsonify({
                 'detail': 'Authentication error',
                 'error_code': 'AUTH_ERROR'
             }), 500
     
     return decorated
+
+
+def get_current_user_id(fallback: Optional[Any] = None) -> Optional[str]:
+    """
+    Return normalized authenticated user id from request context.
+    Falls back to common key variants when needed.
+    """
+    if hasattr(g, 'user') and isinstance(g.user, dict):
+        user_id = g.user.get('id') or g.user.get('user_id') or g.user.get('_id') or g.user.get('sub')
+        if user_id:
+            return str(user_id)
+    if fallback is None:
+        return None
+    return str(fallback)
 
 
 def require_role(*roles):

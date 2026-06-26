@@ -1,70 +1,200 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
-import {
-  getQuizHistory,
-  getUserPerformance,
-  generateQuiz,
-  type QuizAttempt,
-  type UserPerformance,
-} from '../../services/quizService';
+import { getUserPerformance, type UserPerformance } from '../../services/quizService';
+import { parseApiError } from '../../services/apiError';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 import EmptyState from '../../components/EmptyState';
+import { getEffectivePrimaryInterest, getInterestAssessmentDisplay } from '../../utils/interestDisplay';
+import { LEARNING_DOMAIN_LABELS, normalizeRoadmapDomain } from '../../utils/roadmapTopics';
 
 const Quizzes: React.FC = () => {
-  const { isAuthenticated, user, hasCompletedOnboarding, userInterests } = useStore();
+  const { isAuthenticated, user, hasCompletedOnboarding, userInterests, logout } = useStore();
   const navigate = useNavigate();
 
-  const [history, setHistory] = useState<QuizAttempt[]>([]);
   const [performance, setPerformance] = useState<UserPerformance | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generatingQuiz, setGeneratingQuiz] = useState(false);
-  const primaryInterest = userInterests?.primaryInterest;
+  const [error, setError] = useState<string | null>(null);
+  const [startingAIQuiz, setStartingAIQuiz] = useState(false);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<'basic' | 'intermediate' | 'advanced' | 'expert'>('basic');
+  const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
+  const primaryInterest = interestUi.primary;
+  const effectivePrimary = useMemo(
+    () => getEffectivePrimaryInterest(userInterests),
+    [userInterests],
+  );
+
+  const [coursePathTopics, setCoursePathTopics] = useState<string[]>([]);
+  const [coursePathTopicsLoading, setCoursePathTopicsLoading] = useState(false);
+  const [coursePathError, setCoursePathError] = useState<string | null>(null);
+  const [courseTopicQuery, setCourseTopicQuery] = useState('');
+  const [selectedCourseTopic, setSelectedCourseTopic] = useState<string | null>(null);
+  const [courseQuizDifficulty, setCourseQuizDifficulty] = useState<
+    'basic' | 'intermediate' | 'advanced' | 'expert'
+  >('basic');
+  const [startingCourseQuiz, setStartingCourseQuiz] = useState(false);
+
+  const filteredCourseTopics = useMemo(() => {
+    const q = courseTopicQuery.trim().toLowerCase();
+    if (!q) return coursePathTopics;
+    return coursePathTopics.filter((t) => t.toLowerCase().includes(q));
+  }, [coursePathTopics, courseTopicQuery]);
+
+  const loadData = useCallback(async (showSkeleton = false) => {
+    try {
+      if (showSkeleton) {
+        setLoading(true);
+      }
+      setError(null);
+      const [perfSettled] = await Promise.allSettled([getUserPerformance()]);
+      const perf = perfSettled.status === 'fulfilled' ? perfSettled.value : null;
+
+      setPerformance(perf);
+
+      if (perfSettled.status === 'rejected') {
+        const rootError = perfSettled.reason;
+        const parsed = parseApiError(rootError, 'Failed to load quiz data.');
+        if (parsed.status === 401 || parsed.code === 'INVALID_TOKEN' || parsed.code === 'TOKEN_EXPIRED' || parsed.code === 'INVALID_TOKEN_CONTEXT') {
+          try {
+            await logout();
+          } catch {
+            // Ignore logout API failures; we still redirect to login.
+          }
+          navigate('/login', {
+            replace: true,
+            state: {
+              from: '/quizzes',
+              message: 'Your session is invalid or expired. Please log in again.',
+            },
+          });
+          return;
+        }
+        setError(parsed.message);
+      }
+    } catch (error: unknown) {
+      const parsed = parseApiError(error, 'Failed to load quiz data.');
+      if (parsed.status === 401 || parsed.code === 'INVALID_TOKEN' || parsed.code === 'TOKEN_EXPIRED' || parsed.code === 'INVALID_TOKEN_CONTEXT') {
+        try {
+          await logout();
+        } catch {
+          // Ignore logout API failures; we still redirect to login.
+        }
+        navigate('/login', {
+          replace: true,
+          state: {
+            from: '/quizzes',
+            message: 'Your session is invalid or expired. Please log in again.',
+          },
+        });
+        return;
+      }
+      setError(parsed.message);
+    } finally {
+      if (showSkeleton) {
+        setLoading(false);
+      }
+    }
+  }, [logout, navigate]);
+
+  const loadCoursePathTopics = useCallback(() => {
+    if (!user?.id || !hasCompletedOnboarding) return;
+    setCoursePathTopicsLoading(true);
+    setCoursePathError(null);
+    try {
+      const merged = [...LEARNING_DOMAIN_LABELS];
+      const domain = effectivePrimary ? normalizeRoadmapDomain(effectivePrimary) : '';
+      setCoursePathTopics(merged);
+      setSelectedCourseTopic((prev) => {
+        if (prev && merged.some((t) => t.toLowerCase() === prev.toLowerCase())) return prev;
+        if (domain) {
+          const match = merged.find((t) => t.toLowerCase() === domain.toLowerCase());
+          if (match) return match;
+        }
+        return merged[0] ?? null;
+      });
+    } catch (err: unknown) {
+      setCoursePathError(parseApiError(err, 'Could not load course topics.').message);
+      setCoursePathTopics([]);
+    } finally {
+      setCoursePathTopicsLoading(false);
+    }
+  }, [user?.id, hasCompletedOnboarding, effectivePrimary]);
 
   useEffect(() => {
-    if (isAuthenticated && user) {
-      loadData();
-    }
-  }, [isAuthenticated, user]);
+    if (!isAuthenticated || !user?.id) return;
+    void loadCoursePathTopics();
+  }, [isAuthenticated, user?.id, loadCoursePathTopics]);
 
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      console.log('Loading quiz data...');
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
 
-      const [hist, perf] = await Promise.all([
-        getQuizHistory(10),
-        getUserPerformance(),
-      ]);
+    // Initial database fetch with skeleton, then keep stats in sync.
+    loadData(true);
 
-      console.log('History received:', hist);
-      console.log('Performance received:', perf);
+    const pollInterval = window.setInterval(() => {
+      loadData(false);
+    }, 5000);
 
-      setHistory(hist);
-      setPerformance(perf);
-    } catch (error: any) {
-      console.error('Error loading quiz data:', error);
-      console.error('Error details:', error.response?.data || error.message);
-      alert(`Failed to load quiz data: ${error.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const handleFocusRefresh = () => {
+      loadData(false);
+    };
+
+    const handleVisibilityRefresh = () => {
+      if (document.visibilityState === 'visible') {
+        loadData(false);
+      }
+    };
+
+    window.addEventListener('focus', handleFocusRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
+    return () => {
+      window.clearInterval(pollInterval);
+      window.removeEventListener('focus', handleFocusRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+    };
+  }, [isAuthenticated, user, loadData]);
 
   const handleStartQuiz = async () => {
     try {
-      setGeneratingQuiz(true);
+      setStartingAIQuiz(true);
+      setError(null);
       if (!primaryInterest) {
-        alert('Please complete the interest assessment first.');
+        setError('Complete the interest assessment first (Quizzes → Interest Assessment) to start an AI quiz.');
         return;
       }
-      const quiz = await generateQuiz(primaryInterest, 'Beginner');
-      navigate(`/quiz/${quiz.id}`);
-    } catch (error: any) {
-      alert(error.message || 'Failed to generate quiz');
+      navigate('/ai-quiz', {
+        state: {
+          topic: primaryInterest,
+          difficulty: selectedDifficulty,
+        },
+      });
+    } catch (error: unknown) {
+      setError(parseApiError(error, 'Failed to start AI quiz.').message);
     } finally {
-      setGeneratingQuiz(false);
+      setStartingAIQuiz(false);
     }
+  };
+
+  const handleStartCourseTopicQuiz = () => {
+    if (!hasCompletedOnboarding) {
+      setError('Complete the interest assessment first before starting a quiz.');
+      navigate('interest-check');
+      return;
+    }
+    if (!selectedCourseTopic) {
+      setError('Choose a domain (search and select a chip below).');
+      return;
+    }
+    setError(null);
+    setStartingCourseQuiz(true);
+    navigate('/ai-quiz', {
+      state: {
+        topic: selectedCourseTopic,
+        difficulty: courseQuizDifficulty,
+      },
+    });
+    setStartingCourseQuiz(false);
   };
 
   // If not authenticated, redirect to login
@@ -82,16 +212,10 @@ const Quizzes: React.FC = () => {
           {/* Interest Check Status Skeleton */}
           <LoadingSkeleton variant="card" className="mb-6" />
           
-          {/* Performance Overview Skeleton */}
+          {/* Performance + generated quiz skeleton */}
           <LoadingSkeleton variant="card" className="mb-6" />
-          
-          {/* Available Quizzes Skeleton */}
-          <div className="mb-6">
-            <div className="h-8 bg-slate-200 rounded-lg w-48 mb-4 animate-pulse"></div>
-            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <LoadingSkeleton variant="card" count={6} />
-            </div>
-          </div>
+          <LoadingSkeleton variant="card" className="mb-6" />
+          <LoadingSkeleton variant="card" className="mb-6" />
         </div>
       </div>
     );
@@ -137,21 +261,21 @@ const Quizzes: React.FC = () => {
               {hasCompletedOnboarding && userInterests ? (
                 <div className="ml-13">
                   <p className="text-slate-600 mb-4">
-                    Your primary interest: <span className="font-semibold text-indigo-600">{userInterests.primaryInterest}</span>
-                    <span className="text-slate-500 ml-2">({Math.round(userInterests.confidence * 100)}% confidence)</span>
+                    Your primary interest: <span className="font-semibold text-indigo-600">{interestUi.primary}</span>
+                    <span className="text-slate-500 ml-2">({interestUi.confidencePct}% confidence)</span>
                   </p>
                   <div className="flex flex-wrap gap-2 mb-4">
-                    {userInterests.allInterests.slice(0, 3).map((interest, index) => (
+                    {interestUi.tagDomains.map((domain) => (
                       <span
-                        key={index}
+                        key={domain}
                         className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium"
                       >
-                        {interest.domain}
+                        {domain}
                       </span>
                     ))}
                   </div>
                   <button
-                    onClick={() => navigate('/interest-check')}
+                    onClick={() => navigate('interest-check')}
                     className="text-indigo-600 hover:text-indigo-700 font-medium text-sm flex items-center gap-1"
                   >
                     Retake Assessment
@@ -166,7 +290,7 @@ const Quizzes: React.FC = () => {
                     Take a quick assessment to discover your learning interests and get personalized recommendations.
                   </p>
                   <button
-                    onClick={() => navigate('/interest-check')}
+                    onClick={() => navigate('interest-check')}
                     className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors flex items-center gap-2"
                   >
                     Start Interest Assessment
@@ -180,11 +304,17 @@ const Quizzes: React.FC = () => {
           </div>
         </div>
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Performance Overview */}
         {performance && performance.overallStats.totalQuizzes > 0 && (
           <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl shadow-lg p-8 mb-6 text-white">
             <h2 className="text-xl font-bold mb-6">Your Performance</h2>
-            <div className="grid md:grid-cols-4 gap-6">
+            <div className="grid md:grid-cols-3 gap-6">
               <div>
                 <p className="text-indigo-200 text-sm mb-1">Total Quizzes</p>
                 <p className="text-3xl font-bold">{performance.overallStats.totalQuizzes}</p>
@@ -197,40 +327,63 @@ const Quizzes: React.FC = () => {
                 <p className="text-indigo-200 text-sm mb-1">Best Score</p>
                 <p className="text-3xl font-bold">{performance.overallStats.bestScore}%</p>
               </div>
-              <div>
-                <p className="text-indigo-200 text-sm mb-1">Accuracy</p>
-                <p className="text-3xl font-bold">
-                  {performance.overallStats.totalQuestions > 0
-                    ? Math.round((performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100)
-                    : 0}%
-                </p>
-              </div>
             </div>
           </div>
         )}
 
-        {/* AI-Generated Quiz */}
+        {/* PLPG Generated quiz */}
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-slate-900 mb-4">AI-Generated Quiz</h2>
-
           {hasCompletedOnboarding && primaryInterest ? (
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-              <div className="flex items-center justify-between flex-col sm:flex-row gap-4">
+            <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl shadow-lg p-6 text-white">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                  <p className="text-sm text-slate-500">Based on your assessment</p>
-                  <h3 className="text-xl font-semibold text-slate-900 mt-1">
-                    {primaryInterest}
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-2">
-                    Quiz is generated in real time using DeepSeek.
+                  <p className="text-xs uppercase tracking-wide text-indigo-200">
+                    PLPG
                   </p>
+                  <h2 className="text-2xl font-bold mt-1">
+                    PLPG Generated quiz
+                  </h2>
+                  <p className="text-sm text-indigo-100 mt-2 max-w-2xl">
+                    Questions are built on demand by your PLPG backend from your interest assessment (sliders and primary
+                    domain), roadmap context, and the difficulty you choose—not from a fixed question bank.
+                  </p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-white/20 text-white border border-white/30">
+                      Topic: {primaryInterest}
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 text-white/95 border border-white/25 capitalize">
+                      {selectedDifficulty}
+                    </span>
+                  </div>
                 </div>
+              </div>
+
+              <div className="mt-5">
+                <p className="text-sm font-semibold mb-3 text-indigo-100">Difficulty</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {(['basic', 'intermediate', 'advanced', 'expert'] as const).map((level) => (
+                    <button
+                      key={level}
+                      onClick={() => setSelectedDifficulty(level)}
+                      className={`px-4 py-3 rounded-xl border-2 font-semibold capitalize transition-colors ${
+                        selectedDifficulty === level
+                          ? 'bg-white text-indigo-700 border-white'
+                          : 'bg-transparent text-white border-white/40 hover:bg-white/10'
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5">
                 <button
                   onClick={handleStartQuiz}
-                  disabled={generatingQuiz}
-                  className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={startingAIQuiz}
+                  className="w-full sm:w-auto px-6 py-3 bg-white text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {generatingQuiz ? 'Generating...' : 'Generate AI Quiz'}
+                  {startingAIQuiz ? 'Starting...' : 'Start Quiz'}
                 </button>
               </div>
             </div>
@@ -242,50 +395,142 @@ const Quizzes: React.FC = () => {
                 </svg>
               }
               title="Complete Interest Assessment"
-              description="We need your interest profile to generate a personalized AI quiz."
+              description="We need your interest profile so PLPG can generate quizzes matched to your domains and roadmap."
               actionLabel="Start Assessment"
-              onAction={() => navigate('/interest-check')}
+              onAction={() => navigate('interest-check')}
             />
           )}
         </div>
 
-        {/* Recent Quiz History */}
-        {history.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">Recent Quizzes</h2>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Interest</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Level</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Score</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-700 uppercase">Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {history.map((attempt) => (
-                    <tr key={attempt.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/quiz/results/${attempt.id}`)}>
-                      <td className="px-6 py-4 text-sm text-slate-900">{attempt.interest}</td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{attempt.level}</td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${attempt.score >= 80 ? 'bg-green-100 text-green-700' :
-                          attempt.score >= 60 ? 'bg-yellow-100 text-yellow-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                          {attempt.score}% ({attempt.correctCount}/{attempt.totalQuestions})
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">
-                        {new Date(attempt.completedAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* Domain quiz — same purple PLPG card + OpenAI flow as primary generated quiz */}
+        {hasCompletedOnboarding && effectivePrimary ? (
+          <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-indigo-200">PLPG</p>
+                <h2 className="text-2xl font-bold mt-1">PLPG Generated quiz</h2>
+                <p className="text-sm text-indigo-100 mt-2 max-w-2xl">
+                  Choose one of the nine PLPG learning domains (same labels as your interest assessment). Questions are
+                  built on demand by your PLPG backend from that domain, roadmap context, and the difficulty you
+                  choose—not from a fixed question bank.
+                </p>
+                {selectedCourseTopic ? (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-white/20 text-white border border-white/30">
+                      Topic: {selectedCourseTopic}
+                    </span>
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-white/15 text-white/95 border border-white/25 capitalize">
+                      {courseQuizDifficulty}
+                    </span>
+                  </div>
+                ) : null}
+              </div>
             </div>
+
+            {coursePathTopicsLoading ? (
+              <p className="text-sm text-indigo-100 mt-5">Loading domains…</p>
+            ) : coursePathError ? (
+              <div className="mt-5 rounded-xl border border-amber-300/50 bg-amber-500/20 px-4 py-3 text-sm text-amber-50">
+                {coursePathError}{' '}
+                <button
+                  type="button"
+                  onClick={() => void loadCoursePathTopics()}
+                  className="font-semibold text-white underline underline-offset-2"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : coursePathTopics.length === 0 ? (
+              <div className="mt-5 rounded-xl border border-white/25 bg-white/10 px-4 py-4 text-sm text-indigo-100">
+                No learning domains available. Try refreshing the page or signing in again.
+              </div>
+            ) : (
+              <>
+                <label className="block text-sm font-semibold text-indigo-100 mb-2 mt-5" htmlFor="course-topic-search">
+                  Search domains
+                </label>
+                <div className="relative mb-4">
+                  <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-indigo-200">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                      />
+                    </svg>
+                  </span>
+                  <input
+                    id="course-topic-search"
+                    type="search"
+                    value={courseTopicQuery}
+                    onChange={(e) => setCourseTopicQuery(e.target.value)}
+                    placeholder="Filter by name…"
+                    className="w-full rounded-xl border-2 border-white/40 bg-white/10 py-3 pl-10 pr-4 text-sm text-white placeholder:text-indigo-200/80 focus:outline-none focus:ring-2 focus:ring-white/40"
+                    autoComplete="off"
+                  />
+                </div>
+
+                <p className="text-xs font-semibold uppercase tracking-wide text-indigo-200 mb-2">
+                  Select a domain ({filteredCourseTopics.length} shown)
+                </p>
+                <div className="max-h-52 overflow-y-auto rounded-xl border border-white/25 bg-white/5 p-3 mb-5">
+                  <div className="flex flex-wrap gap-2">
+                    {filteredCourseTopics.map((t) => {
+                      const active =
+                        selectedCourseTopic &&
+                        selectedCourseTopic.toLowerCase() === t.toLowerCase();
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setSelectedCourseTopic(t)}
+                          className={`rounded-full px-3 py-1.5 text-sm font-semibold border-2 capitalize transition-colors ${
+                            active
+                              ? 'border-white bg-white text-indigo-700'
+                              : 'border-white/40 bg-transparent text-white hover:bg-white/10'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {filteredCourseTopics.length === 0 && courseTopicQuery.trim() ? (
+                    <p className="text-sm text-indigo-100 py-2">No domains match that search.</p>
+                  ) : null}
+                </div>
+
+                <p className="text-sm font-semibold mb-3 text-indigo-100">Difficulty</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                  {(['basic', 'intermediate', 'advanced', 'expert'] as const).map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => setCourseQuizDifficulty(level)}
+                      className={`px-4 py-3 rounded-xl border-2 font-semibold capitalize transition-colors ${
+                        courseQuizDifficulty === level
+                          ? 'bg-white text-indigo-700 border-white'
+                          : 'bg-transparent text-white border-white/40 hover:bg-white/10'
+                      }`}
+                    >
+                      {level}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleStartCourseTopicQuiz}
+                  disabled={!selectedCourseTopic || startingCourseQuiz}
+                  className="w-full sm:w-auto px-6 py-3 bg-white text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {startingCourseQuiz ? 'Starting…' : 'Start Quiz'}
+                </button>
+              </>
+            )}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

@@ -1,17 +1,14 @@
 import os
 import logging
+import importlib
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 from config import get_config
-from database import init_db, close_db
+from database import init_db
 from routes import auth_bp, profile_bp, admin_bp
 from personalized_learning_path import (
     DOMAINS,
@@ -21,6 +18,7 @@ from personalized_learning_path import (
     train_model,
     predict_interest,
     generate_recommendations,
+    get_official_learning_curricula,
     save_student_response,
     generate_interest_chart,
 )
@@ -31,6 +29,31 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def _safe_run_seed(module_name: str, function_name: str, success_message: str) -> None:
+    """Import and run a seed function safely without startup crashes."""
+    try:
+        module = importlib.import_module(module_name)
+    except ModuleNotFoundError:
+        # Seed files are optional in some environments/repo states.
+        # Keep startup clean by logging this at debug level.
+        logger.debug("Optional seed module '%s' not found; skipping.", module_name)
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Failed loading seed module '%s': %s", module_name, exc)
+        return
+
+    seed_func = getattr(module, function_name, None)
+    if not callable(seed_func):
+        logger.debug("Optional seed function '%s.%s' not found; skipping.", module_name, function_name)
+        return
+
+    try:
+        seed_func()
+        logger.info(success_message)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Seed execution failed for '%s.%s': %s", module_name, function_name, exc)
 
 def create_app(config_name=None):
     """Application factory"""
@@ -65,45 +88,32 @@ def create_app(config_name=None):
     def enforce_https():
         if config.IS_PRODUCTION and not request.is_secure and request.headers.get('X-Forwarded-Proto', '').lower() != 'https':
             logger.warning(f"Insecure request: {request.remote_addr} {request.method} {request.path}")
-            return jsonify({'error': 'HTTPS required'}), 403
+            return jsonify({
+                'error': 'HTTPS required',
+                'detail': 'This server is running in production mode and only accepts HTTPS requests. Use HTTPS, configure your reverse proxy to set X-Forwarded-Proto: https, or set FLASK_ENV=development for local HTTP testing.',
+                'error_code': 'HTTPS_REQUIRED',
+            }), 403
     
     # Initialize database
     init_db()
     
-    # Auto-seed quiz templates and admin roles in development
+    # Auto-seed recommendation catalog in development
     if not config.IS_PRODUCTION:
-        try:
-            from seed_quiz_templates import seed_quiz_templates
-            seed_quiz_templates()
-            logger.info("Quiz templates auto-seeded for development")
-        except Exception as e:
-            logger.warning(f"Failed to auto-seed quiz templates: {e}")
-        
-        try:
-            from seed_admin_roles import seed_admin_roles
-            seed_admin_roles()
-            logger.info("Admin roles and permissions auto-seeded for development")
-        except Exception as e:
-            logger.warning(f"Failed to auto-seed admin roles: {e}")
-        
-        try:
-            from seed_test_users import seed_test_users
-            seed_test_users()
-            logger.info("Test users auto-seeded for development")
-        except Exception as e:
-            logger.warning(f"Failed to auto-seed test users: {e}")
-
-        try:
-            from seed_notes import seed_notes
-            seed_notes()
-            logger.info("Notes auto-seeded for development")
-        except Exception as e:
-            logger.warning(f"Failed to auto-seed notes: {e}")
+        _safe_run_seed("seed_recommendation_catalog", "seed_recommendation_catalog", "Recommendation catalog auto-seeded for development")
     
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(profile_bp, url_prefix='/api')
     app.register_blueprint(admin_bp, url_prefix='/api/admin')
+
+    # Dev-only email diagnostics
+    if not config.IS_PRODUCTION:
+        try:
+            from routes.email_debug import bp as email_debug_bp
+            app.register_blueprint(email_debug_bp, url_prefix='/api/debug')
+        except Exception:
+            # Non-fatal: diagnostics are optional
+            logger.debug('Email debug blueprint not available')
     
     # Import and register quiz blueprint
     from routes import quiz_bp
@@ -129,7 +139,55 @@ def create_app(config_name=None):
 
     from routes.interest_intelligence import bp as interest_intelligence_bp
     app.register_blueprint(interest_intelligence_bp, url_prefix='/api/interest')
+
+    # New advanced learning intelligence API (prediction, roadmap, profile, progress)
+    from advanced_learning_path.api import bp as learning_intelligence_bp
+    app.register_blueprint(learning_intelligence_bp, url_prefix='/api')
     
+    from routes.strict_quiz import strict_quiz_bp
+    app.register_blueprint(strict_quiz_bp)  # Blueprint has url_prefix='/api/strict-quiz' defined
+
+    # Real-time AI quiz (OpenAI-powered, dynamic, weak-concept retraining)
+    from routes.ai_quiz import ai_quiz_bp
+    app.register_blueprint(ai_quiz_bp, url_prefix='/api/ai-quiz')
+
+    # Adaptive RL engine (next-action selection, reward updates, policy training)
+    from rl.api import bp as rl_bp
+    app.register_blueprint(rl_bp, url_prefix='/api/rl')
+
+    # User feedback submission + admin management (Requirement #11)
+    from routes.feedback import feedback_bp, admin_feedback_bp
+    app.register_blueprint(feedback_bp, url_prefix='/api/feedback')
+    app.register_blueprint(admin_feedback_bp, url_prefix='/api/admin/feedback')
+
+    from routes.admin_catalog import admin_catalog_bp
+    app.register_blueprint(admin_catalog_bp, url_prefix='/api/admin/catalog')
+
+    # Community routes (interest-based + user-created group chat)
+    from routes.community import community_bp
+    app.register_blueprint(community_bp, url_prefix='/api/community')
+
+    from routes.remediation import remediation_bp
+    app.register_blueprint(remediation_bp, url_prefix='/api/remediation')
+
+    try:
+        from models.feedback import Feedback
+        Feedback.ensure_indexes()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not ensure feedback indexes: {e}")
+
+    try:
+        from models.user_learning_path import UserLearningPath
+        UserLearningPath.ensure_indexes()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not ensure user learning path indexes: {e}")
+
+    try:
+        from models.remediation_lesson import RemediationLesson
+        RemediationLesson.ensure_indexes()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"Could not ensure remediation lesson indexes: {e}")
+
     # Store limiter on app for cleanup
     app.limiter = limiter
     
@@ -163,6 +221,32 @@ def health():
         "domains": DOMAINS,
         "version": "1.0.0",
         "python_backend": True
+    })
+
+
+@app.route("/api/interest/curriculum", methods=["GET"])
+def api_interest_curriculum():
+    """
+    Dynamic per-domain topic roadmap and stage projects via OpenAI learning-path API.
+
+    Query params:
+      domain — required; canonical name or case-insensitive match (e.g. ``Web Development``).
+    """
+    domain = (request.args.get("domain") or "").strip()
+    if not domain:
+        return jsonify({
+            "error": "Query parameter 'domain' is required",
+            "domains": DOMAINS,
+        }), 400
+
+    curricula = get_official_learning_curricula(domain)
+    canonical = next((d for d in DOMAINS if d.lower() == domain.lower()), domain)
+
+    return jsonify({
+        "requested_domain": domain,
+        "canonical_domain": canonical,
+        "topic_roadmap": curricula["topic_roadmap"],
+        "stage_project_roadmap": curricula["stage_project_roadmap"],
     })
 
 
@@ -225,8 +309,7 @@ def api_predict():
 
     # Save to user profile if authenticated
     from flask import g
-    from middleware.auth import authenticate_token
-    
+
     # Try to get authenticated user
     auth_header = request.headers.get('Authorization')
     if auth_header:
@@ -253,6 +336,7 @@ def api_predict():
                         'completed': True,
                         'primaryInterest': prediction['predicted_interest'],
                         'confidence': prediction['confidence'],
+                        'modelConfidence': prediction.get('model_confidence', prediction['confidence']),
                         'allInterests': all_interests_list,
                         'completedAt': datetime.utcnow(),
                         'lastUpdated': datetime.utcnow()
@@ -263,7 +347,7 @@ def api_predict():
                 update_data['focusDomains'] = [prediction['predicted_interest']]
                 
                 User.update(user_id, update_data)
-                logger.info(f"Saved interest assessment for user {user_id}: {prediction['predicted_interest']} ({prediction['confidence']:.1%})")
+                logger.info(f"Saved interest assessment for user {user_id}: {prediction['predicted_interest']} (confidence: {prediction['confidence']:.1%}, model: {prediction.get('model_confidence', 0):.1%})")
         except Exception as e:
             logger.warning(f"Could not save interest assessment to user profile: {e}")
 

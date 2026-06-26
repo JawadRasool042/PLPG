@@ -1,22 +1,74 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate, Navigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import { getQuizAttempt, getUserPerformance, type QuizAttempt, type UserPerformance } from '../../services/quizService';
+import {
+    buildMcqReviewNarratives,
+    extractOptionKey,
+    normalizeChoice,
+} from '../../utils/quizReviewText';
+import {
+    DEFAULT_PASSING_SCORE,
+    getRetakeQuizId,
+    resolveRemediationForAttempt,
+    type RemediationStatus,
+} from '../../services/remediationService';
+
+type QuizResultsLocationState = {
+    attemptSnapshot?: QuizAttempt;
+    mixedAttempt?: { domain?: string; score?: number };
+    remediation?: RemediationStatus;
+};
 
 const QuizResults: React.FC = () => {
     const { attemptId } = useParams<{ attemptId: string }>();
     const navigate = useNavigate();
+    const location = useLocation();
+    const locationState = (location.state || {}) as QuizResultsLocationState;
     const { isAuthenticated, user } = useStore();
 
     const [attempt, setAttempt] = useState<QuizAttempt | null>(null);
     const [performance, setPerformance] = useState<UserPerformance | null>(null);
     const [loading, setLoading] = useState(true);
+    const [remediation, setRemediation] = useState<RemediationStatus | null>(
+        locationState.remediation ?? null,
+    );
+    const [remediationLoading, setRemediationLoading] = useState(false);
 
     useEffect(() => {
-        if (isAuthenticated && attemptId) {
-            loadResults();
+        if (!isAuthenticated || !attemptId) return;
+
+        const loadFromSnapshot = async () => {
+            const snapshot = locationState.attemptSnapshot!;
+            setAttempt(snapshot);
+            try {
+                const perfData = await getUserPerformance();
+                setPerformance(perfData);
+            } catch {
+                setPerformance(null);
+            }
+            try {
+                setRemediationLoading(true);
+                const rem = await resolveRemediationForAttempt(
+                    attemptId!,
+                    snapshot.score,
+                    snapshot,
+                    locationState.remediation ?? null,
+                );
+                setRemediation(rem);
+            } finally {
+                setRemediationLoading(false);
+                setLoading(false);
+            }
+        };
+
+        if (locationState.attemptSnapshot) {
+            void loadFromSnapshot();
+            return;
         }
-    }, [isAuthenticated, attemptId]);
+
+        void loadResults();
+    }, [isAuthenticated, attemptId, locationState.attemptSnapshot, locationState.remediation]);
 
     const loadResults = async () => {
         try {
@@ -27,6 +79,18 @@ const QuizResults: React.FC = () => {
             ]);
             setAttempt(attemptData);
             setPerformance(perfData);
+            try {
+                setRemediationLoading(true);
+                const rem = await resolveRemediationForAttempt(
+                    attemptId!,
+                    attemptData.score,
+                    undefined,
+                    locationState.remediation ?? null,
+                );
+                setRemediation(rem);
+            } finally {
+                setRemediationLoading(false);
+            }
         } catch (error: any) {
             alert(error.message || 'Failed to load results');
             navigate('/quizzes');
@@ -58,7 +122,23 @@ const QuizResults: React.FC = () => {
     }
 
     const scorePercentage = attempt.score;
-    const scoreColor = scorePercentage >= 80 ? 'green' : scorePercentage >= 60 ? 'yellow' : 'red';
+    const passingScore = remediation?.passingScore ?? DEFAULT_PASSING_SCORE;
+    const passedQuiz = scorePercentage >= passingScore;
+    const needsRemediation = !passedQuiz;
+    const canContinue = passedQuiz && (remediation?.canContinue !== false);
+    const showLearningPathCta = canContinue;
+    const retakeQuizId = getRetakeQuizId(remediation);
+    const scoreColor = scorePercentage >= passingScore ? 'green' : scorePercentage >= passingScore - 15 ? 'yellow' : 'red';
+
+    const goToLearningPath = () =>
+        navigate('/learning-path', {
+            state: {
+                mixedAttempt: locationState.mixedAttempt ?? {
+                    domain: attempt.interest,
+                    score: attempt.score,
+                },
+            },
+        });
 
     return (
         <div className="min-h-screen bg-slate-50 pt-24 pb-12">
@@ -85,12 +165,50 @@ const QuizResults: React.FC = () => {
                     </div>
                     <h1 className="text-4xl font-bold mb-2">{scorePercentage}%</h1>
                     <p className="text-xl mb-1">
-                        {scoreColor === 'green' ? 'Excellent Work!' : scoreColor === 'yellow' ? 'Good Job!' : 'Keep Practicing!'}
+                        {scoreColor === 'green' ? 'Excellent Work!' : scoreColor === 'yellow' ? 'Almost There!' : 'Keep Practicing!'}
                     </p>
                     <p className="text-lg opacity-90">
                         You got {attempt.correctCount} out of {attempt.totalQuestions} questions correct
                     </p>
+                    {!canContinue && (
+                        <p className="mt-3 text-base font-medium bg-white/20 rounded-lg px-4 py-2 inline-block">
+                            Passing score: {passingScore}% — study the remediation lesson before continuing
+                        </p>
+                    )}
+                    {showLearningPathCta && (
+                        <button
+                            type="button"
+                            onClick={goToLearningPath}
+                            className="mt-6 px-8 py-3 bg-white text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 transition-colors shadow-lg"
+                        >
+                            Go to Learning Path →
+                        </button>
+                    )}
                 </div>
+
+                {needsRemediation && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 mb-6">
+                        <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                            Remediation required before continuing
+                        </h3>
+                        <p className="text-amber-800 text-sm mb-4">
+                            You scored below the passing threshold ({passingScore}%). A personalized lesson
+                            has been generated from this quiz only — study it, then retake the same quiz to
+                            unlock your learning path.
+                        </p>
+                        {remediationLoading ? (
+                            <p className="text-sm text-amber-700">Preparing your lesson…</p>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => navigate(`/remediation/${attemptId}`)}
+                                className="px-5 py-2.5 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors"
+                            >
+                                Open remediation lesson
+                            </button>
+                        )}
+                    </div>
+                )}
 
                 <div className="grid lg:grid-cols-3 gap-6 mb-6">
                     {/* Quiz Info */}
@@ -142,19 +260,50 @@ const QuizResults: React.FC = () => {
                     {/* Actions */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
                         <h3 className="text-sm font-semibold text-slate-700 mb-4">What's Next?</h3>
+                        {remediationLoading && (
+                            <p className="text-sm text-slate-500 mb-3">Checking remediation status…</p>
+                        )}
                         <div className="space-y-3">
+                            {needsRemediation ? (
+                                <>
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
+                                        Your score is below {passingScore}%. Complete the study guide and retake this quiz to continue your learning path.
+                                    </div>
+                                    <button
+                                        onClick={() => navigate(`/remediation/${attemptId}`)}
+                                        className="w-full px-4 py-3 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors"
+                                    >
+                                        Study Remediation Lesson
+                                    </button>
+                                    <p className="text-xs text-slate-500 text-center">
+                                        Complete the lesson to unlock the retake quiz.
+                                    </p>
+                                </>
+                            ) : showLearningPathCta ? (
+                                <button
+                                    onClick={goToLearningPath}
+                                    className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+                                >
+                                    Go to Learning Path
+                                </button>
+                            ) : null}
                             <button
                                 onClick={() => navigate('/quizzes')}
-                                className="w-full px-4 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+                                className="w-full px-4 py-3 border-2 border-indigo-600 text-indigo-600 rounded-lg font-medium hover:bg-indigo-50 transition-colors"
                             >
                                 Browse More Quizzes
                             </button>
-                            <button
-                                onClick={() => window.location.reload()}
-                                className="w-full px-4 py-3 border-2 border-indigo-600 text-indigo-600 rounded-lg font-medium hover:bg-indigo-50 transition-colors"
-                            >
-                                Retake This Quiz
-                            </button>
+                            {!needsRemediation && showLearningPathCta && (
+                                <button
+                                    onClick={() => {
+                                        const retakeId = retakeQuizId || attempt.quizId;
+                                        navigate(`/quiz/${retakeId}`);
+                                    }}
+                                    className="w-full px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
+                                >
+                                    Retake This Quiz
+                                </button>
+                            )}
                             <button
                                 onClick={() => navigate('/profile')}
                                 className="w-full px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-colors"
@@ -214,9 +363,11 @@ const QuizResults: React.FC = () => {
                                 {/* Options */}
                                 <div className="space-y-2 mb-4">
                                     {result.options.map((option, optIdx) => {
-                                        const letter = option.charAt(0);
-                                        const isUserAnswer = letter === result.userAnswer;
-                                        const isCorrectAnswer = letter === result.correctAnswer;
+                                        const letter = extractOptionKey(option, optIdx);
+                                        const userAnswer = normalizeChoice(result.userAnswer);
+                                        const correctAnswer = normalizeChoice(result.correctAnswer);
+                                        const isUserAnswer = letter === userAnswer;
+                                        const isCorrectAnswer = letter === correctAnswer;
 
                                         return (
                                             <div
@@ -251,11 +402,38 @@ const QuizResults: React.FC = () => {
                                     })}
                                 </div>
 
-                                {/* Explanation */}
-                                <div className="bg-white rounded-lg p-4 border border-slate-200">
-                                    <p className="text-sm font-semibold text-slate-700 mb-1">Explanation:</p>
-                                    <p className="text-sm text-slate-600">{result.explanation}</p>
-                                </div>
+                                {/* Why correct / why incorrect */}
+                                {(() => {
+                                    const { whyCorrect, whyIncorrect } = buildMcqReviewNarratives({
+                                        options: result.options,
+                                        userAnswer: result.userAnswer,
+                                        correctAnswer: result.correctAnswer,
+                                        isCorrect: result.isCorrect,
+                                        explanation: result.explanation,
+                                    });
+                                    return (
+                                        <div className="space-y-3">
+                                            <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                                                <p className="text-sm font-semibold text-emerald-900 mb-1">
+                                                    Why the correct answer is right
+                                                </p>
+                                                <p className="text-sm text-emerald-900/90 leading-relaxed whitespace-pre-wrap">
+                                                    {whyCorrect}
+                                                </p>
+                                            </div>
+                                            {whyIncorrect && (
+                                                <div className="bg-rose-50 rounded-lg p-4 border border-rose-200">
+                                                    <p className="text-sm font-semibold text-rose-900 mb-1">
+                                                        Why your answer was incorrect
+                                                    </p>
+                                                    <p className="text-sm text-rose-900/90 leading-relaxed whitespace-pre-wrap">
+                                                        {whyIncorrect}
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         ))}
                     </div>

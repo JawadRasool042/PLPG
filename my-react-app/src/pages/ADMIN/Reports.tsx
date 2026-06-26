@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { fetchDashboardAnalytics } from '../../services/admin/analytics';
-import { fetchUsers, exportUsersCsv } from '../../services/admin/users';
+import { fetchReport } from '../../services/admin/analytics';
+import { exportUsersCsv } from '../../services/admin/users';
 import { exportLogsCsv } from '../../services/admin/logs';
-import { FileText, Download, RefreshCw, Users, Activity, BarChart3, BookOpen, CheckCircle2, Loader2 } from 'lucide-react';
+import {
+  FileText,
+  Download,
+  RefreshCw,
+  Users,
+  Activity,
+  BarChart3,
+  BookOpen,
+  CheckCircle2,
+  Loader2,
+  Sparkles,
+} from 'lucide-react';
 
 interface GeneratedReport {
   id: string;
@@ -15,10 +25,34 @@ interface GeneratedReport {
 }
 
 const REPORT_TYPES = [
-  { id: 'user_overview', label: 'User Overview Report', icon: Users, description: 'Complete list of users, registration stats, verification status' },
-  { id: 'performance', label: 'User Performance Report', icon: BarChart3, description: 'Quiz scores, completion rates, learning progress' },
-  { id: 'engagement', label: 'Engagement Report', icon: Activity, description: 'Login activity, session data, platform usage' },
-  { id: 'content_usage', label: 'Content Usage Report', icon: BookOpen, description: 'Most accessed content, learning path adoption' },
+  {
+    id: 'user_overview',
+    label: 'User Overview',
+    icon: Users,
+    description: 'Complete user list, registration stats, and verification status',
+    accent: 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100',
+  },
+  {
+    id: 'performance',
+    label: 'User Performance',
+    icon: BarChart3,
+    description: 'Quiz scores, completion rates, and learning progress',
+    accent: 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100',
+  },
+  {
+    id: 'engagement',
+    label: 'Engagement',
+    icon: Activity,
+    description: 'Login activity, session data, and platform usage',
+    accent: 'bg-amber-50 text-amber-600 ring-1 ring-amber-100',
+  },
+  {
+    id: 'content_usage',
+    label: 'Content Usage',
+    icon: BookOpen,
+    description: 'Most accessed content and learning path adoption',
+    accent: 'bg-rose-50 text-rose-600 ring-1 ring-rose-100',
+  },
 ];
 
 const Reports: React.FC = () => {
@@ -26,75 +60,23 @@ const Reports: React.FC = () => {
   const [generating, setGenerating] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
 
-  const { data: dashboard } = useQuery({
-    queryKey: ['admin-analytics-dashboard'],
-    queryFn: fetchDashboardAnalytics,
-  });
-
-  const { data: usersData } = useQuery({
-    queryKey: ['admin-users-report'],
-    queryFn: () => fetchUsers({ page: 1, limit: 100 }),
-  });
-
   const handleGenerate = async (type: typeof REPORT_TYPES[number]) => {
     setGenerating(type.id);
-
-    // Simulate generation delay
-    await new Promise(r => setTimeout(r, 1200));
-
-    const metrics = dashboard?.metrics;
-    const users = usersData?.data ?? [];
-    const total = usersData?.pagination?.total ?? 0;
-
-    let summary: Record<string, any> = {};
-
-    if (type.id === 'user_overview') {
-      summary = {
-        'Total Users': total,
-        'Verified Users': metrics?.users?.verified ?? 0,
-        'Pending Verification': (metrics?.users?.total ?? 0) - (metrics?.users?.verified ?? 0),
-        'New This Week': metrics?.users?.newThisWeek ?? 0,
-        'New This Month': metrics?.users?.newThisMonth ?? 0,
+    try {
+      const liveReport = await fetchReport({ reportType: type.id });
+      const summary = liveReport?.summary || {};
+      const report: GeneratedReport = {
+        id: `${type.id}_${Date.now()}`,
+        type: type.id,
+        title: type.label,
+        generatedAt: new Date(liveReport?.generatedAt || Date.now()).toLocaleString(),
+        status: 'ready',
+        summary,
       };
-    } else if (type.id === 'performance') {
-      summary = {
-        'Avg Quiz Score': '72.5%',
-        'Path Completion Rate': '65.3%',
-        'Top Performing Domain': 'AI/ML',
-        'Students Completed ≥1 Quiz': Math.round(total * 0.68),
-        'Students with 80%+ Score': Math.round(total * 0.34),
-      };
-    } else if (type.id === 'engagement') {
-      summary = {
-        'Total Logins': metrics?.activity?.totalLogins ?? 0,
-        'Failed Logins': metrics?.activity?.failedLogins ?? 0,
-        'Admin Actions This Week': metrics?.activity?.adminActionsThisWeek ?? 0,
-        'Login Success Rate': metrics?.activity?.totalLogins
-          ? `${Math.round(((metrics.activity.totalLogins - metrics.activity.failedLogins) / metrics.activity.totalLogins) * 100)}%`
-          : 'N/A',
-        'Active Sessions': Math.round(total * 0.42),
-      };
-    } else if (type.id === 'content_usage') {
-      summary = {
-        'Total Content Items': 3,
-        'Published Items': 2,
-        'Draft Items': 1,
-        'Most Accessed': 'Intro to Python',
-        'Learning Paths Active': 2,
-      };
+      setReports((prev) => [report, ...prev]);
+    } finally {
+      setGenerating(null);
     }
-
-    const report: GeneratedReport = {
-      id: `${type.id}_${Date.now()}`,
-      type: type.id,
-      title: type.label,
-      generatedAt: new Date().toLocaleString(),
-      status: 'ready',
-      summary,
-    };
-
-    setReports(prev => [report, ...prev]);
-    setGenerating(null);
   };
 
   const handleExportUsers = async () => {
@@ -156,106 +138,156 @@ const Reports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="space-y-6">
+      {/* Page intro */}
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-500">Generate and export reports</p>
-          <h1 className="text-3xl font-bold text-slate-900 mt-1">Reports</h1>
-          <p className="text-sm text-slate-600 mt-1">Generate final reports on content usage and user performance</p>
+          <h2 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
+            Reports
+          </h2>
+          <p className="text-sm text-slate-600 mt-1.5 max-w-xl">
+            Generate detailed reports on content usage, user performance, and platform engagement.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleExportUsers}
             disabled={exportingCsv}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 transition-colors"
           >
-            {exportingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Export Users CSV
+            {exportingCsv ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">Users CSV</span>
           </button>
           <button
             onClick={handleExportLogs}
             disabled={exportingCsv}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-60 transition-colors"
           >
-            {exportingCsv ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Export Logs CSV
+            {exportingCsv ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">Logs CSV</span>
           </button>
         </div>
       </div>
 
-      {/* Generate Report Cards */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">Generate Report</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {REPORT_TYPES.map(type => {
+      {/* Generate Reports */}
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles className="h-4 w-4 text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+            Generate report
+          </h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+          {REPORT_TYPES.map((type) => {
             const Icon = type.icon;
             const isGenerating = generating === type.id;
             return (
-              <div key={type.id} className="rounded-2xl border border-slate-200 bg-white p-5 flex items-start gap-4 hover:border-indigo-200 hover:shadow-sm transition-all">
-                <div className="h-11 w-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+              <div
+                key={type.id}
+                className="group rounded-xl border border-slate-200 bg-white p-4 sm:p-5 flex items-start gap-4 hover:shadow-md hover:border-slate-300 transition-all"
+              >
+                <div
+                  className={`h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 ${type.accent}`}
+                >
                   <Icon className="h-5 w-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900">{type.label}</p>
-                  <p className="text-sm text-slate-500 mt-0.5">{type.description}</p>
+                  <p className="text-sm font-semibold text-slate-900">{type.label}</p>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    {type.description}
+                  </p>
                 </div>
                 <button
                   onClick={() => handleGenerate(type)}
                   disabled={!!generating}
-                  className="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  className="flex-shrink-0 inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 disabled:opacity-50 transition-colors"
                 >
-                  {isGenerating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  {isGenerating ? 'Generating...' : 'Generate'}
+                  {isGenerating ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  {isGenerating ? 'Generating' : 'Generate'}
                 </button>
               </div>
             );
           })}
         </div>
-      </div>
+      </section>
 
       {/* Generated Reports */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900 mb-4">
-          Generated Reports
-          {reports.length > 0 && <span className="ml-2 text-sm font-normal text-slate-500">({reports.length})</span>}
-        </h2>
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
+            Generated reports
+          </h3>
+          {reports.length > 0 && (
+            <span className="text-xs text-slate-500 tabular-nums">
+              {reports.length} {reports.length === 1 ? 'report' : 'reports'}
+            </span>
+          )}
+        </div>
 
         {reports.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center">
-            <FileText className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600 font-medium">No reports generated yet</p>
-            <p className="text-sm text-slate-500 mt-1">Click "Generate" on any report type above</p>
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-10 sm:p-12 text-center">
+            <div className="h-12 w-12 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+              <FileText className="h-6 w-6" />
+            </div>
+            <p className="text-sm font-medium text-slate-700">No reports generated yet</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Click "Generate" on any report type above
+            </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {reports.map(report => (
-              <div key={report.id} className="rounded-2xl border border-slate-200 bg-white p-6">
-                <div className="flex items-start justify-between gap-4 mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <CheckCircle2 className="h-5 w-5" />
+          <div className="space-y-3">
+            {reports.map((report) => (
+              <div
+                key={report.id}
+                className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5"
+              >
+                <div className="flex items-start justify-between gap-4 mb-4 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-9 w-9 rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 className="h-4 w-4" />
                     </div>
-                    <div>
-                      <p className="font-semibold text-slate-900">{report.title}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">Generated: {report.generatedAt}</p>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {report.title}
+                      </p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                        Generated {report.generatedAt}
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={() => handleDownloadReport(report)}
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
                   >
-                    <Download className="h-4 w-4" />
+                    <Download className="h-3.5 w-3.5" />
                     Download
                   </button>
                 </div>
 
-                {/* Summary Table */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
                   {Object.entries(report.summary).map(([key, value]) => (
-                    <div key={key} className="bg-slate-50 rounded-xl p-3">
-                      <p className="text-xs text-slate-500 font-medium">{key}</p>
-                      <p className="text-lg font-bold text-slate-900 mt-1">{String(value)}</p>
+                    <div
+                      key={key}
+                      className="bg-slate-50 border border-slate-100 rounded-lg p-3"
+                    >
+                      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold truncate">
+                        {key}
+                      </p>
+                      <p className="text-base sm:text-lg font-semibold text-slate-900 mt-1 tabular-nums">
+                        {String(value)}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -263,7 +295,7 @@ const Reports: React.FC = () => {
             ))}
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 };

@@ -76,6 +76,14 @@ def _create_indexes():
     _db.notes.create_index([('interest', 1), ('order', 1)])
     _db.note_progress.create_index([('userId', 1), ('noteId', 1)], unique=True)
 
+    # Recommendation catalog indexes
+    _db.careers.create_index([('category', 1), ('level', 1)])
+    _db.courses.create_index([('category', 1), ('level', 1)])
+    _db.learning_paths.create_index([('category', 1), ('level', 1)])
+    _db.recommendation_rules.create_index([('category', 1), ('level', 1)])
+    _db.categories.create_index([('slug', 1)], unique=True)
+    _db.recommendations.create_index([('userId', 1), ('status', 1)])
+
     print('* Database indexes created')
 
 

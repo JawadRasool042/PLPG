@@ -1,13 +1,4 @@
-// Validate and initialize API base URL
-const getApiBaseUrl = (): string => {
-  const url = import.meta.env.VITE_API_BASE_URL;
-  if (!url && import.meta.env.PROD) {
-    throw new Error('VITE_API_BASE_URL environment variable is required in production');
-  }
-  return url || 'http://localhost:5000/api';
-};
-
-const API_BASE_URL = getApiBaseUrl();
+import { API_BASE_URL } from '../config/apiBase';
 
 const USER_ACCESS_TOKEN_KEY = 'plpg_access_token';
 const USER_REFRESH_TOKEN_KEY = 'plpg_refresh_token';
@@ -21,6 +12,9 @@ export interface UserData {
   isActive: boolean;
   createdAt: Date;
 }
+
+/** Return type for successful registration (same shape as logged-in user payload). */
+export type RegisterResult = UserData;
 
 // Helper to get token expiry from JWT (without verification)
 const getTokenExpiry = (token: string): number | null => {
@@ -63,7 +57,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutM
 };
 
 // Refresh access token
-const refreshAccessToken = async (): Promise<boolean> => {
+export const refreshAccessToken = async (): Promise<boolean> => {
   const refreshToken = localStorage.getItem(USER_REFRESH_TOKEN_KEY);
   if (!refreshToken) return false;
 
@@ -94,6 +88,55 @@ const refreshAccessToken = async (): Promise<boolean> => {
     localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
     return false;
   }
+};
+
+/** Return a valid access token, refreshing when near expiry. */
+export const getValidAccessToken = async (): Promise<string | null> => {
+  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  if (!token) return null;
+
+  if (isTokenExpired(token)) {
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) return null;
+    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  }
+
+  return token;
+};
+
+/** JSON auth headers with a valid (refreshed) access token when available. */
+export const getAuthenticatedHeaders = async (): Promise<Record<string, string>> => {
+  const token = await getValidAccessToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
+/**
+ * fetch() wrapper that attaches a valid token and retries once after refresh on 401.
+ */
+export const authenticatedFetch = async (
+  url: string,
+  options: RequestInit = {},
+): Promise<Response> => {
+  const headers = await getAuthenticatedHeaders();
+  const mergedHeaders = { ...headers, ...(options.headers as Record<string, string> | undefined) };
+
+  let response = await fetch(url, { ...options, headers: mergedHeaders });
+
+  if (response.status === 401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const retryHeaders = await getAuthenticatedHeaders();
+      response = await fetch(url, {
+        ...options,
+        headers: { ...retryHeaders, ...(options.headers as Record<string, string> | undefined) },
+      });
+    }
+  }
+
+  return response;
 };
 
 // Register a new user

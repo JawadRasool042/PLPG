@@ -505,7 +505,7 @@ const HomePage = () => {
               </Link>
             ) : (
               <Link
-                to="/interest-check"
+                to="/quizzes/interest-check"
                 className="group inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-indigo-600 border border-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 hover:border-indigo-700 hover:shadow-lg transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
               >
                 Take Interest Assessment

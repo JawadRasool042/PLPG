@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
+import { API_BASE_URL } from '../../config/apiBase';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API = API_BASE_URL;
 const TOKEN_KEY = 'plpg_access_token';
 
 const apiFetch = async (path: string) => {

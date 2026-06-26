@@ -8,9 +8,10 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 from jsonschema import validate, ValidationError
-import google.generativeai as genai
 import requests
 import time
+
+from utils.openai_request import chat_completions, DEFAULT_FALLBACK_MODELS
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,9 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION & SCHEMAS
 # ============================================================================
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_API_BASE_URL = os.getenv("DEEPSEEK_API_BASE_URL", "https://api.deepseek.com/v1")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "deepseek" if DEEPSEEK_API_KEY else "gemini")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
 PROMPT_VERSION = "questions_v2"
 VERIFICATION_ENABLED = True
 CACHE_DURATION_HOURS = 24
@@ -76,7 +75,7 @@ VERIFICATION_SCHEMA = {
 }
 
 # ============================================================================
-# GEMINI PROMPTS (Production-ready)
+# LLM PROMPTS (Production-ready)
 # ============================================================================
 
 SYSTEM_PROMPT_GENERATE = """You are an expert assessment writer. Your job is to create high-quality multiple-choice questions.
@@ -209,81 +208,50 @@ def extract_json_from_response(text: str) -> Optional[List[Dict]]:
         return None
 
 
-def call_gemini_api(
+def call_openai_api(
     prompt: str,
     system_prompt: str = "",
     max_tokens: int = 2000,
     temperature: float = 0.7
 ) -> Optional[str]:
     """
-    Call Gemini API safely with error handling.
+    Call OpenAI API safely with error handling.
     """
     try:
-        if not GEMINI_API_KEY:
-            logger.error("GEMINI_API_KEY not set")
+        if not OPENAI_API_KEY:
+            logger.error("OPENAI_API_KEY not set")
             return None
 
-        genai.configure(api_key=GEMINI_API_KEY)
-        client = genai.GenerativeModel('gemini-2.0-flash')
-        
-        full_prompt = f"{system_prompt}\n\nUser request:\n{prompt}"
-        
-        response = client.generate_content(
-            full_prompt,
-            generation_config={
-                'max_output_tokens': max_tokens,
-                'temperature': temperature
-            }
+        logger.info(
+            "Calling OpenAI API with model=%s, max_tokens=%s, temperature=%s",
+            OPENAI_MODEL,
+            max_tokens,
+            temperature,
         )
-        
-        return response.text if response else None
+
+        full_prompt = f"{system_prompt}\n\nUser request:\n{prompt}"
+        _, text = chat_completions(
+            messages=[
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": full_prompt},
+            ],
+            api_key=OPENAI_API_KEY,
+            model=OPENAI_MODEL,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            response_format={"type": "json_object"},
+            timeout=30,
+        )
+        logger.info("OpenAI API response received: %s chars", len(text or ""))
+        return text
         
     except Exception as e:
-        logger.error(f"Gemini API error: {str(e)}")
-        return None
-
-
-def call_deepseek_api(
-    prompt: str,
-    system_prompt: str = "",
-    max_tokens: int = 2000,
-    temperature: float = 0.7
-) -> Optional[str]:
-    """
-    Call DeepSeek API (OpenAI-compatible) with error handling.
-    """
-    try:
-        if not DEEPSEEK_API_KEY:
-            logger.error("DEEPSEEK_API_KEY not set")
-            return None
-
-        url = f"{DEEPSEEK_API_BASE_URL.rstrip('/')}/chat/completions"
-
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
-
-        payload = {
-            "model": DEEPSEEK_MODEL,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature
-        }
-
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(url, headers=headers, json=payload, timeout=45)
-        response.raise_for_status()
-        data = response.json()
-
-        return data.get("choices", [{}])[0].get("message", {}).get("content")
-
-    except Exception as e:
-        logger.error(f"DeepSeek API error: {str(e)}")
+        error_str = str(e)
+        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+            logger.error(f"OpenAI API QUOTA EXCEEDED: {type(e).__name__}: {error_str}")
+            logger.error("Free tier rate limit has been reached. Please check billing or retry later.")
+        else:
+            logger.error(f"OpenAI API error: {type(e).__name__}: {error_str}", exc_info=True)
         return None
 
 
@@ -296,12 +264,8 @@ def call_llm_api(
     """
     Route LLM call to configured provider.
     """
-    provider = (LLM_PROVIDER or "gemini").lower()
-
-    if provider == "deepseek":
-        return call_deepseek_api(prompt, system_prompt, max_tokens, temperature)
-
-    return call_gemini_api(prompt, system_prompt, max_tokens, temperature)
+    _ = (LLM_PROVIDER or "openai").lower()
+    return call_openai_api(prompt, system_prompt, max_tokens, temperature)
 
 
 def generate_explanation(question_doc: Dict, user_id: Optional[str] = None) -> Dict:
@@ -451,15 +415,18 @@ def generate_and_verify_questions(
     Returns: (questions_list, generated_count, verified_count)
     """
     
-    logger.info(f"Generating {count} questions: topic={topic}, level={level}, concept={concept_tag}")
+    logger.info(f"=== Starting generate_and_verify_questions ===")
+    logger.info(f"topic={topic}, level={level}, concept={concept_tag}, count={count}, user_id={user_id}")
     
     # 1. Check cache first
+    logger.info("Checking cache...")
     cached = check_cache(topic, level, concept_tag)
     if cached and len(cached) >= count:
-        logger.info(f"Returning {len(cached)} cached questions")
+        logger.info(f"Cache hit! Returning {len(cached)} cached questions")
         return cached[:count], 0, 0
     
     # 2. Generate questions via LLM
+    logger.info(f"Cache miss or insufficient. Generating {count} questions via LLM...")
     user_prompt = (
         f"Generate {count} multiple-choice questions about '{topic}' "
         f"for level '{level}'. "
@@ -475,49 +442,62 @@ def generate_and_verify_questions(
     )
     
     if not raw_response:
-        logger.error("LLM generation failed")
+        logger.error("LLM generation failed - no response from API")
         return [], 0, 0
+    
+    logger.info(f"LLM returned response ({len(raw_response)} chars)")
     
     # 3. Parse response
+    logger.info("Parsing LLM response...")
     generated_questions = extract_json_from_response(raw_response)
     if not generated_questions or not isinstance(generated_questions, list):
-        logger.error(f"Invalid response format: {raw_response[:200]}")
+        logger.error(f"Invalid response format. Expected list, got: {type(generated_questions)}")
+        logger.error(f"Raw response (first 500 chars): {raw_response[:500]}")
         return [], 0, 0
     
-    logger.info(f"Parsed {len(generated_questions)} questions from LLM")
+    logger.info(f"Successfully parsed {len(generated_questions)} questions from LLM")
     
     # 4. Validate structure
+    logger.info("Validating question schemas...")
     valid_questions = []
-    for q in generated_questions:
+    for idx, q in enumerate(generated_questions):
         is_valid, error = validate_question_json(q)
         if is_valid:
             valid_questions.append(q)
         else:
-            logger.warning(f"Question failed schema validation: {error}")
+            logger.warning(f"Question {idx} failed schema validation: {error}")
+    
+    logger.info(f"Schema validation: {len(valid_questions)} / {len(generated_questions)} passed")
     
     if not valid_questions:
         logger.error("No questions passed schema validation")
         return [], len(generated_questions), 0
     
     # 5. Verify each question (optional but recommended)
+    logger.info(f"Starting verification of {len(valid_questions)} questions...")
     verified_questions = []
     
     if VERIFICATION_ENABLED:
-        for q in valid_questions:
+        for idx, q in enumerate(valid_questions):
+            logger.info(f"Verifying question {idx+1}/{len(valid_questions)}...")
             verified = verify_question_correctness(q)
             if verified:
                 verified_questions.append(verified)
             else:
-                logger.warning(f"Question failed verification: {q.get('question', '')[:50]}")
+                logger.warning(f"Question {idx} failed verification: {q.get('question', '')[:50]}")
     else:
+        logger.info("Verification disabled, using all valid questions")
         verified_questions = valid_questions
     
-    logger.info(f"Verified {len(verified_questions)} / {len(valid_questions)} questions")
+    logger.info(f"Verification complete: {len(verified_questions)} / {len(valid_questions)} verified")
     
     # 6. Persist to DB
     if verified_questions:
+        logger.info(f"Persisting {len(verified_questions)} questions to database...")
         persist_questions(verified_questions, topic, level, user_id)
+        logger.info("Persistence complete")
     
+    logger.info(f"=== Completed generate_and_verify_questions: returning {len(verified_questions)} questions ===")
     return verified_questions, len(generated_questions), len(verified_questions)
 
 

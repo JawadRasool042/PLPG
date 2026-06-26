@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from flask_cors import cross_origin
-from middleware.auth import authenticate_token
+from middleware.auth import authenticate_token, get_current_user_id
 import logging
 from services.llm_question_service import generate_explanation
 
@@ -33,8 +33,8 @@ def api_generate_explanation():
         if not question_doc:
             return jsonify({'success': False, 'error': 'question_doc is required'}), 400
 
-        current_user = request.user
-        result = generate_explanation(question_doc, user_id=str(current_user.id) if current_user else None)
+        current_user_id = get_current_user_id()
+        result = generate_explanation(question_doc, user_id=current_user_id)
 
         if result.get('error'):
             # propagate error details

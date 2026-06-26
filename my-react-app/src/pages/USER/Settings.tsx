@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
+import { API_BASE_URL } from '../../config/apiBase';
 
 interface SettingsData {
   email: string;
@@ -40,8 +41,7 @@ const Settings: React.FC = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/settings`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const response = await fetch(`${API_BASE_URL}/settings`, { headers: { 'Authorization': `Bearer ${token}` } });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
       setSettings({
@@ -74,8 +74,7 @@ const Settings: React.FC = () => {
     try {
       setSaving(true);
       const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/settings`, {
+      const response = await fetch(`${API_BASE_URL}/settings`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ preferences: settings?.preferences, notifications: settings?.notifications, privacy: settings?.privacy })
@@ -99,8 +98,7 @@ const Settings: React.FC = () => {
     try {
       setChangingPassword(true);
       const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/settings/password`, {
+      const response = await fetch(`${API_BASE_URL}/settings/password`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(passwordData)
@@ -124,8 +122,7 @@ const Settings: React.FC = () => {
     try {
       setDeleting(true);
       const token = localStorage.getItem('plpg_access_token');
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/account`, {
+      const response = await fetch(`${API_BASE_URL}/account`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: deletePassword, confirmation: deleteConfirmation })

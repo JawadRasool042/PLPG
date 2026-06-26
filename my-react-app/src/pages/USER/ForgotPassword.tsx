@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/apiBase';
 
 const ForgotPassword: React.FC = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
+  const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
+  const [devMessage, setDevMessage] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setDevResetUrl(null);
+    setDevMessage(null);
     setLoading(true);
 
     try {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/auth/forgot-password`, {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -24,6 +28,13 @@ const ForgotPassword: React.FC = () => {
 
       if (response.ok) {
         setSuccess(true);
+        if (data.dev_fallback && data.password_reset?.reset_url) {
+          setDevResetUrl(data.password_reset.reset_url as string);
+          setDevMessage(
+            (data.message as string) ||
+              'Development mode: open the link below (no email was sent).'
+          );
+        }
       } else {
         setError(data.detail || 'Something went wrong. Please try again.');
       }
@@ -71,19 +82,69 @@ const ForgotPassword: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Check your email</h3>
-            <p className="text-slate-600 mb-6">
-              We've sent a password reset link to <strong>{email}</strong>
-            </p>
-            <p className="text-sm text-slate-500 mb-6">
-              Didn't receive the email? Check your spam folder or{' '}
-              <button 
-                onClick={() => { setSuccess(false); setEmail(''); }}
-                className="text-indigo-600 hover:text-indigo-700 font-medium"
-              >
-                try again
-              </button>
-            </p>
+            {devResetUrl ? (
+              <>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">Development reset link</h3>
+                <p className="text-slate-600 mb-4 text-sm text-left bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  {devMessage}
+                </p>
+                <p className="text-slate-600 mb-2 text-sm">
+                  Account: <strong>{email}</strong>
+                </p>
+                <Link
+                  to={(() => {
+                    try {
+                      const u = new URL(devResetUrl);
+                      return `${u.pathname}${u.search}`;
+                    } catch {
+                      return '/reset-password';
+                    }
+                  })()}
+                  className="inline-block w-full py-3 px-4 mb-4 rounded-xl bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors"
+                >
+                  Open password reset page
+                </Link>
+                <p className="text-xs text-slate-500 break-all mb-6">{devResetUrl}</p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-xl font-bold text-slate-900 mb-2">Check your email</h3>
+                <p className="text-slate-600 mb-6">
+                  We've sent a password reset link to <strong>{email}</strong>
+                </p>
+                <p className="text-sm text-slate-500 mb-6">
+                  Didn't receive the email? Check your spam folder or{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSuccess(false);
+                      setEmail('');
+                      setDevResetUrl(null);
+                      setDevMessage(null);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    try again
+                  </button>
+                </p>
+              </>
+            )}
+            {!devResetUrl ? null : (
+              <p className="text-sm text-slate-500 mb-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccess(false);
+                    setEmail('');
+                    setDevResetUrl(null);
+                    setDevMessage(null);
+                  }}
+                  className="text-indigo-600 hover:text-indigo-700 font-medium"
+                >
+                  Start over
+                </button>
+              </p>
+            )}
             <Link
               to="/login"
               className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 font-semibold transition-colors"

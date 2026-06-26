@@ -1,16 +1,59 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
+import {
+  submitFeedback,
+  getMyFeedback,
+  type FeedbackCategory,
+  type FeedbackRecord,
+} from '../../services/feedbackService';
 
-const CATEGORIES = ['General', 'Quiz Quality', 'Learning Path', 'UI/UX', 'Bug Report', 'Feature Request'];
+const CATEGORIES: FeedbackCategory[] = [
+  'General',
+  'Quiz Quality',
+  'Learning Path',
+  'UI/UX',
+  'Bug Report',
+  'Feature Request',
+];
 const RATINGS = [1, 2, 3, 4, 5];
+
+const STATUS_LABELS: Record<string, { label: string; classes: string }> = {
+  new: { label: 'New', classes: 'bg-blue-100 text-blue-700' },
+  in_review: { label: 'In Review', classes: 'bg-amber-100 text-amber-700' },
+  resolved: { label: 'Resolved', classes: 'bg-emerald-100 text-emerald-700' },
+  dismissed: { label: 'Dismissed', classes: 'bg-slate-100 text-slate-600' },
+};
 
 const Feedback: React.FC = () => {
   const { isAuthenticated, user } = useStore();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ category: 'General', rating: 0, subject: '', message: '' });
+  const [form, setForm] = useState<{ category: FeedbackCategory; rating: number; subject: string; message: string }>(
+    { category: 'General', rating: 0, subject: '', message: '' }
+  );
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<FeedbackRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = async () => {
+    if (!isAuthenticated) return;
+    try {
+      setHistoryLoading(true);
+      const items = await getMyFeedback(10);
+      setHistory(items);
+    } catch (err) {
+      console.warn('Failed to load feedback history', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   if (!isAuthenticated || !user) return <Navigate to="/login" replace />;
 
@@ -18,10 +61,22 @@ const Feedback: React.FC = () => {
     e.preventDefault();
     if (!form.rating || !form.message.trim()) return;
     setSubmitting(true);
-    // Simulate API call
-    await new Promise(r => setTimeout(r, 800));
-    setSubmitted(true);
-    setSubmitting(false);
+    setError(null);
+    try {
+      await submitFeedback({
+        category: form.category,
+        rating: form.rating,
+        subject: form.subject.trim() || undefined,
+        message: form.message.trim(),
+        page: window.location.pathname,
+      });
+      setSubmitted(true);
+      void loadHistory();
+    } catch (err: any) {
+      setError(err?.message || 'Failed to submit feedback. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -43,7 +98,11 @@ const Feedback: React.FC = () => {
               Send More
             </button>
             <button
-              onClick={() => navigate('/dashboard')}
+              onClick={() => {
+                if (window.confirm('Do you really want to go to dashboard')) {
+                  navigate('/dashboard');
+                }
+              }}
               className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors"
             >
               Back to Dashboard
@@ -65,6 +124,13 @@ const Feedback: React.FC = () => {
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
+
+            {/* Inline error */}
+            {error && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl px-4 py-3 text-sm">
+                {error}
+              </div>
+            )}
 
             {/* Category */}
             <div>
@@ -143,7 +209,11 @@ const Feedback: React.FC = () => {
             <div className="flex gap-3 pt-2">
               <button
                 type="button"
-                onClick={() => navigate('/dashboard')}
+                onClick={() => {
+                  if (window.confirm('Do you really want to go to dashboard')) {
+                    navigate('/dashboard');
+                  }
+                }}
                 className="flex-1 px-6 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
               >
                 Cancel
@@ -157,6 +227,67 @@ const Feedback: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+
+        {/* My Feedback History */}
+        <div className="mt-8 bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Your Recent Feedback</h2>
+            <button
+              type="button"
+              onClick={() => void loadHistory()}
+              className="text-sm text-indigo-600 hover:underline font-medium"
+            >
+              {historyLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+
+          {historyLoading && history.length === 0 ? (
+            <p className="text-sm text-slate-500">Loading...</p>
+          ) : history.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              You haven't submitted any feedback yet. Use the form above to share your thoughts.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {history.map(item => {
+                const status = STATUS_LABELS[item.status] || STATUS_LABELS.new;
+                return (
+                  <li
+                    key={item.id}
+                    className="rounded-xl border border-slate-200 p-4 hover:border-indigo-200 transition-colors"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                          {item.category}
+                        </span>
+                        {item.rating > 0 && (
+                          <span className="text-xs text-amber-500">{'⭐'.repeat(item.rating)}</span>
+                        )}
+                      </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${status.classes}`}>
+                        {status.label}
+                      </span>
+                    </div>
+                    {item.subject && (
+                      <p className="font-semibold text-slate-900 mb-1">{item.subject}</p>
+                    )}
+                    <p className="text-sm text-slate-600 whitespace-pre-wrap">{item.message}</p>
+                    {item.adminNote && (
+                      <div className="mt-3 bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                        <p className="text-xs font-semibold text-emerald-700 mb-1">Admin response</p>
+                        <p className="text-sm text-emerald-800 whitespace-pre-wrap">{item.adminNote}</p>
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-slate-400">
+                      {item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       </div>
     </div>

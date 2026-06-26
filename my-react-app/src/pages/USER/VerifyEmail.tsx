@@ -14,14 +14,18 @@
  * URL Parameters:
  * - token: Verification token from email
  * - email: Pre-fill email for resend form
+ * - post_register: "1" after signup redirect
+ * - email_sent: "1" or "0" — whether SMTP reported success at registration
  * - success: Flag indicating successful verification
  * - error: Flag indicating error occurred
  * - code: Error code for specific handling
  * - already_verified: User was already verified
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../config/apiBase';
+import { messageFromApiJsonBody } from '../../services/apiError';
 
 // ============================================
 // Types and Interfaces
@@ -35,19 +39,33 @@ type VerificationStatus =
   | 'already_verified' // Already verified
   | 'error';         // Generic error
 
+interface VerificationPayload {
+  verification_token?: string;
+  verification_url?: string;
+  dev_note?: string;
+}
+
 interface ApiError {
-  detail: string;
+  detail?: string;
+  hint?: string;
   error_code?: string;
   email?: string;
   retry_after_seconds?: number;
+  email_sent?: boolean;
+  dev_fallback?: boolean;
+  verification?: VerificationPayload;
+  /** Present on 200 from resend when email is not disclosed (anti-enumeration). */
+  success?: boolean;
+  message?: string;
+  missing_settings?: string[];
 }
 
 // ============================================
 // Constants
 // ============================================
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 const REDIRECT_DELAY_SECONDS = 5;
-const RESEND_COOLDOWN_SECONDS = 300; // 5 minutes
+/** Short UI cooldown only; server enforces real limits (DB + rate limit). */
+const RESEND_COOLDOWN_SECONDS = 45;
 
 // ============================================
 // Main Component
@@ -63,11 +81,21 @@ const VerifyEmail: React.FC = () => {
   const [countdown, setCountdown] = useState(REDIRECT_DELAY_SECONDS);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+  /** When set, shown in the green resend banner instead of the default “check inbox” copy. */
+  const [resendSuccessDetail, setResendSuccessDetail] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  // URL parameters
-  const token = searchParams.get('token');
+  // URL parameters (trim so email clients / copy-paste quirks do not break verify)
+  const token = useMemo(() => {
+    const raw = searchParams.get('token');
+    if (!raw) return null;
+    const t = raw.trim().replace(/^["']+|["']+$/g, '');
+    return t.length ? t : null;
+  }, [searchParams]);
   const emailFromUrl = searchParams.get('email');
+  const postRegister = searchParams.get('post_register') === '1';
+  const emailSentFromRegister = searchParams.get('email_sent') === '1';
+  const emailSendFailedAfterRegister = postRegister && searchParams.get('email_sent') === '0';
   const successFlag = searchParams.get('success');
   const errorFlag = searchParams.get('error');
   const errorCode = searchParams.get('code');
@@ -215,6 +243,7 @@ const VerifyEmail: React.FC = () => {
     setResendLoading(true);
     setErrorMessage('');
     setResendSuccess(false);
+    setResendSuccessDetail(null);
 
     try {
       const response = await fetch(`${API_BASE_URL}/auth/resend-verification`, {
@@ -226,18 +255,46 @@ const VerifyEmail: React.FC = () => {
       const data = await response.json();
 
       if (response.ok) {
-        setResendSuccess(true);
-        setResendCooldown(RESEND_COOLDOWN_SECONDS);
-        setTimeout(() => setResendSuccess(false), 8000);
+        const okData = data as ApiError;
+        if (okData.email_sent) {
+          setResendSuccess(true);
+          setResendSuccessDetail(null);
+          setResendCooldown(RESEND_COOLDOWN_SECONDS);
+          setTimeout(() => setResendSuccess(false), 8000);
+        } else if (okData.dev_fallback && okData.verification?.verification_url) {
+          setResendSuccess(true);
+          setResendSuccessDetail(
+            `Development: open this link to verify your account: ${okData.verification.verification_url}`
+          );
+          setResendCooldown(RESEND_COOLDOWN_SECONDS);
+          setTimeout(() => setResendSuccess(false), 12000);
+        } else if (okData.success) {
+          // Backend returns 200 + success without email_sent when the address is unknown
+          // (anti-enumeration). Do not treat that as an SMTP failure.
+          setResendSuccess(true);
+          setResendSuccessDetail(
+            okData.message ||
+              'If an account exists with this email, a verification link has been sent.'
+          );
+          setResendCooldown(RESEND_COOLDOWN_SECONDS);
+          setTimeout(() => setResendSuccess(false), 8000);
+        } else {
+          setErrorMessage(
+            'The server could not confirm that an email was sent. Check backend logs and SMTP settings.'
+          );
+          setResendSuccess(false);
+          setResendCooldown(10);
+        }
       } else if (response.status === 429) {
-        // Rate limited
         const retryAfter = data.retry_after_seconds || 300;
         setResendCooldown(retryAfter);
         setErrorMessage(`Please wait ${Math.ceil(retryAfter / 60)} minutes before requesting another email.`);
       } else if (data.error_code === 'ALREADY_VERIFIED') {
         setStatus('already_verified');
       } else {
-        setErrorMessage(data.detail || 'Failed to send verification email. Please try again.');
+        const err = data as ApiError;
+        const msg = messageFromApiJsonBody(data as Record<string, unknown>, err.detail || 'Failed to send verification email.');
+        setErrorMessage(msg);
       }
     } catch (err) {
       console.error('Resend error:', err);
@@ -435,7 +492,7 @@ const VerifyEmail: React.FC = () => {
         <h1 className="text-3xl font-bold text-slate-900 mb-3">Verification Failed</h1>
         
         <div className="w-full bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-6">
-          <p className="text-red-700 font-medium text-sm">{errorMessage}</p>
+          <p className="text-red-700 font-medium text-sm">{errorMessage || 'Verification failed. Please try again.'}</p>
         </div>
 
         <p className="text-slate-600 mb-6">
@@ -458,10 +515,24 @@ const VerifyEmail: React.FC = () => {
         </div>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-3">Verify Your Email</h1>
+
+        {emailSendFailedAfterRegister && email && (
+          <div className="w-full mb-4 p-4 bg-amber-50 border-2 border-amber-200 rounded-xl text-left text-amber-900 text-sm">
+            <p className="font-semibold mb-1">Verification email was not delivered</p>
+            <p>
+              Your account exists, but the server could not send mail (often Gmail app password, wrong{' '}
+              <code className="text-xs bg-amber-100 px-1 rounded">EMAIL_FROM</code>, or SMTP errors). Use{' '}
+              <strong>Send verification email</strong> below after fixing backend settings, or check server logs.
+            </p>
+          </div>
+        )}
+
         <p className="text-slate-600 mb-6">
-          {email 
+          {postRegister && emailSentFromRegister && email
             ? `We've sent a verification email to ${email}. Click the link in the email to verify your account.`
-            : 'Enter your email address to receive a verification link.'}
+            : email
+              ? 'Finish signing up by opening the link in your verification email. If nothing arrived, request a new link below.'
+              : 'Enter your email address to receive a verification link.'}
         </p>
 
         {renderResendForm()}
@@ -470,7 +541,8 @@ const VerifyEmail: React.FC = () => {
           <p className="text-slate-600 text-sm">
             <span className="font-semibold">💡 Didn't receive the email?</span>
             <br />
-            Check your spam folder, or make sure you entered the correct email.
+            Check Spam and the Promotions tab, search in All Mail, and confirm the address is correct. If your Gmail is
+            the same as the app’s sending address, the message may appear under Sent or All Mail instead of Inbox.
           </p>
         </div>
       </div>
@@ -485,7 +557,10 @@ const VerifyEmail: React.FC = () => {
           <svg className="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
-          <span>Verification email sent! Please check your inbox.</span>
+          <span className="break-all text-left">
+            {resendSuccessDetail ||
+              'Verification email sent! Please check your inbox.'}
+          </span>
         </div>
       )}
 

@@ -1,12 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+import { API_BASE_URL } from '../config/apiBase';
+
+const API = API_BASE_URL;
 const TOKEN_KEY = 'plpg_access_token';
 
 interface Message {
   role: 'bot' | 'user';
   text: string;
   loading?: boolean;
+  source?: 'openai' | 'fallback' | 'cache';
+  model?: string | null;
+  cached?: boolean;
 }
 
 // Simple markdown-like renderer for bold and bullet points
@@ -63,21 +68,39 @@ const AIChatbot: React.FC = () => {
       });
 
       const data = await res.json();
+      if (!res.ok || data?.success === false) {
+        const message = data?.message || 'The AI service rejected the request.';
+        setMessages(prev => [
+          ...prev.slice(0, -1),
+          { role: 'bot', text: `⚠️ ${message}`, source: 'fallback' }
+        ]);
+        return;
+      }
       const botReply = data.response || "Sorry, I couldn't process that. Please try again.";
 
       setMessages(prev => [
         ...prev.slice(0, -1),
-        { role: 'bot', text: botReply }
+        {
+          role: 'bot',
+          text: botReply,
+          source: data.source as Message['source'],
+          model: data.model ?? null,
+          cached: Boolean(data.cached),
+        }
       ]);
     } catch {
       setMessages(prev => [
         ...prev.slice(0, -1),
-        { role: 'bot', text: "Sorry, I'm having trouble connecting. Please check if the backend is running." }
+        { role: 'bot', text: "Sorry, I'm having trouble connecting. Please check if the backend is running.", source: 'fallback' }
       ]);
     } finally {
       setSending(false);
     }
   };
+
+  const isOffline = messages.some(
+    m => m.role === 'bot' && m.source === 'fallback' && !m.loading
+  );
 
   const quickQuestions = [
     'How do I start with AI/ML?',
@@ -114,8 +137,15 @@ const AIChatbot: React.FC = () => {
                 </svg>
               </div>
               <div>
-                <h3 className="font-semibold text-sm">AI Learning Assistant</h3>
-                <p className="text-xs text-indigo-100">Online • Ready to help</p>
+                <h3 className="font-semibold text-sm">PLPG Learning Assistant</h3>
+                <p className="text-xs text-indigo-100 flex items-center gap-1.5">
+                  <span
+                    className={`inline-block w-1.5 h-1.5 rounded-full ${
+                      isOffline ? 'bg-amber-300' : 'bg-emerald-300'
+                    }`}
+                  />
+                  {isOffline ? 'Offline mode (AI quota)' : 'Online • Ready to help'}
+                </p>
               </div>
             </div>
             <button onClick={() => setIsOpen(false)} className="w-8 h-8 hover:bg-white/20 rounded-lg flex items-center justify-center transition-colors">
@@ -142,6 +172,19 @@ const AIChatbot: React.FC = () => {
                         </svg>
                       </div>
                       <span className="text-xs font-semibold text-slate-500">AI Assistant</span>
+                      {msg.source === 'fallback' && !msg.loading && (
+                        <span
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700"
+                          title={msg.model ? `Offline reply (model: ${msg.model})` : 'Offline reply'}
+                        >
+                          OFFLINE
+                        </span>
+                      )}
+                      {msg.source === 'openai' && msg.cached && !msg.loading && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500" title="Served from cache">
+                          CACHED
+                        </span>
+                      )}
                     </div>
                   )}
                   {msg.loading ? (

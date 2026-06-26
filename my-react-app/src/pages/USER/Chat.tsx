@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { API_BASE_URL } from '../../config/apiBase';
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
+const API = API_BASE_URL;
 const TOKEN_KEY = 'plpg_access_token';
 
 const getToken = () => localStorage.getItem(TOKEN_KEY);
@@ -51,7 +52,6 @@ const Chat: React.FC = () => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Get current user id from token
   useEffect(() => {
     const token = getToken();
     if (!token) return;
@@ -61,7 +61,6 @@ const Chat: React.FC = () => {
     } catch {}
   }, []);
 
-  // Load contacts
   const loadContacts = useCallback(async () => {
     try {
       const res = await apiFetch('/messages/contacts');
@@ -73,13 +72,11 @@ const Chat: React.FC = () => {
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
 
-  // Load conversation
   const loadConversation = useCallback(async (contactId: string) => {
     setLoading(true);
     try {
       const res = await apiFetch(`/messages/conversation/${contactId}`);
       setMessages(res.data || []);
-      // Mark as read — refresh contacts
       loadContacts();
     } catch (e) {
       console.error('Failed to load conversation', e);
@@ -92,12 +89,10 @@ const Chat: React.FC = () => {
     if (!selected) return;
     loadConversation(selected._id);
 
-    // Poll every 3 seconds for new messages
     pollRef.current = setInterval(() => loadConversation(selected._id), 3000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [selected, loadConversation]);
 
-  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -156,7 +151,6 @@ const Chat: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
           <div className="flex h-full">
 
-            {/* ── Sidebar ── */}
             <div className="w-80 border-r border-gray-200 flex flex-col">
               <div className="p-4 border-b border-gray-200">
                 <input
@@ -169,7 +163,6 @@ const Chat: React.FC = () => {
               </div>
 
               <div className="flex-1 overflow-y-auto">
-                {/* Instructors */}
                 {instructors.length > 0 && (
                   <div>
                     <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100">
@@ -179,7 +172,6 @@ const Chat: React.FC = () => {
                   </div>
                 )}
 
-                {/* Students */}
                 {students.length > 0 && (
                   <div>
                     <div className="px-4 py-2 bg-green-50 border-b border-green-100">
@@ -195,10 +187,8 @@ const Chat: React.FC = () => {
               </div>
             </div>
 
-            {/* ── Chat Area ── */}
             {selected ? (
               <div className="flex-1 flex flex-col">
-                {/* Header */}
                 <div className="p-4 border-b border-gray-200 flex items-center gap-3 bg-white">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
                     {initials(selected)}
@@ -209,7 +199,6 @@ const Chat: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                   {loading && <p className="text-center text-sm text-gray-400">Loading...</p>}
                   {!loading && messages.length === 0 && (
@@ -241,7 +230,6 @@ const Chat: React.FC = () => {
                   <div ref={bottomRef} />
                 </div>
 
-                {/* Input */}
                 <div className="p-4 border-t border-gray-200 bg-white">
                   <div className="flex items-center gap-2">
                     <input
@@ -279,7 +267,6 @@ const Chat: React.FC = () => {
   );
 };
 
-// Contact list item component
 const ContactItem: React.FC<{
   contact: Contact;
   selected: boolean;

@@ -6,9 +6,9 @@ import AIChatbot from './AIChatbot';
 
 const Layout: React.FC = () => {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="site-shell min-h-[100dvh] flex flex-col overflow-x-clip">
       <Navbar />
-      <main className="flex-grow pt-16 sm:pt-20">
+      <main className="site-main flex-grow min-w-0 w-full">
         <Outlet />
       </main>
       <Footer />
@@ -18,4 +18,3 @@ const Layout: React.FC = () => {
 };
 
 export default Layout;
-

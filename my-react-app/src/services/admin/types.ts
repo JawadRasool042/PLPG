@@ -56,7 +56,8 @@ export interface UserRow {
 }
 
 export interface AuditLogRow {
-  _id: string;
+  id?: string;
+  _id?: string;
   action: string;
   resource: string;
   description: string;

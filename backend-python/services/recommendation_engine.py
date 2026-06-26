@@ -13,8 +13,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 
 from database import get_collection
-from services.interest_analyzer import InterestAnalyzer
-from services.smart_interest_engine import SmartInterestEngine
+from services.interest_intelligence_engine import InterestIntelligenceEngine
 
 logger = logging.getLogger(__name__)
 
@@ -62,57 +61,107 @@ class RecommendationEngine:
                 return existing
         
         try:
-            # Use SmartInterestEngine when multidimensional responses are available,
-            # otherwise fall back to the existing InterestAnalyzer behavior.
-            if multidim_responses:
-                analysis = SmartInterestEngine.analyze_and_recommend(
-                    user_id,
-                    multidim_responses,
-                    user_analytics,
-                    user_info
-                )
+            # Use InterestIntelligenceEngine for analysis and recommendations.
+            # If multidim_responses are provided, we currently fold them into a flat score signal
+            # by averaging per-domain values (keeps API compatible without deleted legacy modules).
+            scores = dict(interest_scores or {})
+            if multidim_responses and isinstance(multidim_responses, dict):
+                try:
+                    averaged = {}
+                    for domain, dims in multidim_responses.items():
+                        if isinstance(dims, dict) and dims:
+                            vals = []
+                            for v in dims.values():
+                                try:
+                                    vals.append(float(v))
+                                except (TypeError, ValueError):
+                                    continue
+                            if vals:
+                                averaged[domain] = sum(vals) / len(vals)
+                    if averaged:
+                        scores.update(averaged)
+                except Exception:
+                    # If anything is malformed, ignore multidim_responses and continue.
+                    pass
 
-                primary_domain = None
-                if analysis.get('adjustedScores'):
-                    primary_domain = max(analysis['adjustedScores'].items(), key=lambda x: x[1])[0]
+            engine = InterestIntelligenceEngine()
+            result = engine.analyze_interests(
+                interests=scores,
+                behavioral_data=None,
+                user_context=user_info or {},
+                historical_data=None,
+            )
 
-                    detailed_recs = analysis.get('detailedRecommendations', {}) or {}
-                    # If SmartInterestEngine requested clarification (tie or suspicious), return that instruction
-                    if analysis.get('action') == 'request_clarification':
-                        return {
-                            'userId': user_id,
-                            'action': 'request_clarification',
-                            'clarification': analysis.get('tieInfo') or analysis.get('suspicion') or {},
-                            'question': (analysis.get('tieInfo', {}).get('clarification_question') if analysis.get('tieInfo') else None),
-                            'generatedAt': analysis.get('generatedAt')
-                        }
-
-                    interest_analysis = {
-                    'primary_interest': primary_domain,
-                    'primary_score': analysis.get('adjustedScores', {}).get(primary_domain, 0) if primary_domain else 0,
-                    'confidence': analysis.get('metrics', {}).get(primary_domain, {}).get('confidencePct', 0) if primary_domain else 0,
-                    'secondary_interests': [],
-                    'analysis': {
-                        'explanation': analysis.get('reasons'),
-                        'suspicion': analysis.get('suspicion'),
+            if result.tie_detected and getattr(result.tie_detected, "is_tie", False):
+                return {
+                    "userId": user_id,
+                    "action": "request_clarification",
+                    "clarification": {
+                        "candidates": getattr(result.tie_detected, "tie_candidates", []),
+                        "tie_confidence": getattr(result.tie_detected, "tie_confidence", 0.0),
+                        "suggested_differentiators": getattr(result.tie_detected, "suggested_differentiators", []),
                     },
-                    'all_scores': analysis.get('adjustedScores', {})
+                    "question": getattr(result.tie_detected, "resolution_question", None),
+                    "generatedAt": datetime.utcnow(),
                 }
 
-            else:
-                # Generate interest profile analysis (legacy)
-                interest_analysis = InterestAnalyzer.analyze_interest_profile(
-                    user_id, 
-                    interest_scores,
-                    user_analytics,
-                    user_info
-                )
-                primary_domain = interest_analysis['primary_interest']
-                detailed_recs = InterestAnalyzer.generate_detailed_recommendations(
-                    primary_domain,
-                    user_analytics,
-                    user_info
-                )
+            primary_domain = result.primary_interest
+            ranked = result.ranked_interests or []
+            confidence = 0.0
+            if ranked and isinstance(ranked[0], dict):
+                try:
+                    confidence = float(ranked[0].get("confidence", 0.0))
+                except (TypeError, ValueError):
+                    confidence = 0.0
+
+            secondary = []
+            for item in ranked[1:4]:
+                if isinstance(item, dict) and item.get("name"):
+                    secondary.append(
+                        {
+                            "domain": item.get("name"),
+                            "score": item.get("score"),
+                            "reason": item.get("reason"),
+                        }
+                    )
+
+            all_scores = {i.get("name"): i.get("score") for i in ranked if isinstance(i, dict) and i.get("name")}
+
+            interest_analysis = {
+                "primary_interest": primary_domain,
+                "primary_score": all_scores.get(primary_domain, 0),
+                "confidence": confidence,
+                "secondary_interests": secondary,
+                "analysis": {
+                    "explanation": [i.get("reason") for i in ranked[:3] if isinstance(i, dict)],
+                    "anomaly": getattr(result.anomaly_detection, "anomaly_type", None) if result.anomaly_detection else None,
+                    "quality_metrics": result.quality_metrics if hasattr(result, "quality_metrics") else {},
+                },
+                "all_scores": all_scores,
+            }
+
+            rec = result.recommendation
+            detailed_recs = {
+                "career_paths": getattr(rec, "career_paths", []),
+                "skill_roadmap": getattr(rec, "skill_roadmap", []),
+                "learning_next_step": getattr(rec, "learning_next_step", ""),
+                "justification": getattr(rec, "justification", ""),
+                "learning_approach": getattr(rec, "learning_approach", {}),
+                "top_resources": [],
+                "project_ideas": [],
+                "learning_path": getattr(rec, "skill_roadmap", []),
+            }
+
+            # Enrich with database-driven catalog when available
+            try:
+                from services.dynamic_recommendation_service import DynamicRecommendationService
+                dynamic = DynamicRecommendationService.generate_and_store(user_id, force_regenerate=True)
+                if dynamic:
+                    detailed_recs["top_resources"] = dynamic.get("courses", [])
+                    detailed_recs["career_paths"] = dynamic.get("careers", detailed_recs["career_paths"])
+                    detailed_recs["learning_path"] = dynamic.get("roadmap") or detailed_recs["learning_path"]
+            except Exception as dyn_exc:
+                logger.warning("Dynamic catalog enrichment skipped: %s", dyn_exc)
             
             # Create recommendation document
             recommendation_doc = {

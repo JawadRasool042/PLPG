@@ -2,11 +2,11 @@
 # Flask endpoints for LLM-powered question generation & interest extraction
 # Drop into backend-python/routes/
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from flask_cors import cross_origin
 import logging
 from datetime import datetime
-from middleware.auth import authenticate_token
+from middleware.auth import authenticate_token, get_current_user_id
 from services.llm_question_service import (
     generate_and_verify_questions,
     generate_interest_weights,
@@ -17,7 +17,21 @@ from services.llm_question_service import generate_micro_lesson
 
 logger = logging.getLogger(__name__)
 
-bp = Blueprint('llm', __name__, url_prefix='/api/llm')
+bp = Blueprint('llm', __name__)
+
+
+def _current_user_id_or_401():
+    user_id = get_current_user_id()
+    if not user_id:
+        return None, (jsonify({'success': False, 'error': 'Unauthorized'}), 401)
+    return user_id, None
+
+
+def _require_admin_or_403():
+    role = str((getattr(g, 'user', {}) or {}).get('role') or '').strip().lower()
+    if role not in {'admin', 'super_admin'}:
+        return jsonify({'success': False, 'error': 'Admin only'}), 403
+    return None
 
 # ============================================================================
 # QUESTION GENERATION ENDPOINTS
@@ -49,7 +63,9 @@ def api_generate_questions():
     """
     try:
         data = request.json or {}
-        current_user = request.user
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         # Validate input
         topic = data.get('topic', '').strip()
@@ -69,7 +85,7 @@ def api_generate_questions():
                 'error': 'level must be beginner, intermediate, or advanced'
             }), 400
         
-        logger.info(f"Generating {count} questions for {topic} ({level}) - user {current_user.id}")
+        logger.info(f"Generating {count} questions for {topic} ({level}) - user {current_user_id}")
         
         # Call generation service
         questions, gen_count, ver_count = generate_and_verify_questions(
@@ -77,7 +93,7 @@ def api_generate_questions():
             level=level,
             concept_tag=concept_tag,
             count=count,
-            user_id=str(current_user.id)
+            user_id=current_user_id
         )
         
         return jsonify({
@@ -116,7 +132,9 @@ def api_get_personalized_questions():
         from models import get_db
         db = get_db()
         
-        current_user = request.user
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         topic = request.args.get('topic', '').strip()
         level = request.args.get('level', 'beginner').lower()
         count = min(int(request.args.get('count', 5)), 10)
@@ -124,7 +142,7 @@ def api_get_personalized_questions():
         if not topic:
             return jsonify({'success': False, 'error': 'topic required'}), 400
         
-        logger.info(f"Fetching {count} questions: {topic} ({level}) - user {current_user.id}")
+        logger.info(f"Fetching {count} questions: {topic} ({level}) - user {current_user_id}")
         
         # Try to get from cache
         cutoff = db['questions'].find_one({'created_at': {'$exists': True}})
@@ -152,7 +170,7 @@ def api_get_personalized_questions():
             level=level,
             concept_tag=topic.lower().replace(' ', '_'),
             count=count - len(cached),
-            user_id=str(current_user.id)
+            user_id=current_user_id
         )
         
         all_questions = cached + questions
@@ -199,7 +217,9 @@ def api_extract_interest():
     """
     try:
         data = request.json or {}
-        current_user = request.user
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         free_text = data.get('text', '').strip()
         slider_weights = data.get('merge_with_sliders', {})
         
@@ -209,7 +229,7 @@ def api_extract_interest():
                 'error': 'text must be at least 10 characters'
             }), 400
         
-        logger.info(f"Extracting interests from free text - user {current_user.id}")
+        logger.info(f"Extracting interests from free text - user {current_user_id}")
         
         # Call LLM extraction
         llm_result = generate_interest_weights(free_text)
@@ -231,13 +251,17 @@ def api_extract_interest():
         
         # Update user's interests in DB
         from models.user import User
-        user_doc = User.find_by_id(current_user.id)
+        user_doc = User.find_by_id(current_user_id)
         if user_doc:
-            user_doc['interests'] = merged_interests
-            user_doc['interests_updated_at'] = datetime.utcnow()
-            user_doc['interests_confidence'] = llm_result.get('confidence', 0.5)
-            user_doc.save()
-            logger.info(f"Saved interests for user {current_user.id}: {merged_interests}")
+            User.update(
+                current_user_id,
+                {
+                    'interests': merged_interests,
+                    'interests_updated_at': datetime.utcnow(),
+                    'interests_confidence': llm_result.get('confidence', 0.5),
+                },
+            )
+            logger.info(f"Saved interests for user {current_user_id}: {merged_interests}")
         
         return jsonify({
             'success': True,
@@ -264,9 +288,9 @@ def api_get_flagged_questions():
     Admin endpoint: Get questions flagged for human review.
     """
     try:
-        # TODO: Add admin check
-        # if not current_user.is_admin:
-        #     return jsonify({'error': 'Admin only'}), 403
+        admin_error = _require_admin_or_403()
+        if admin_error:
+            return admin_error
         
         flagged = get_flagged_questions()
         
@@ -293,15 +317,19 @@ def api_approve_question(question_id):
         from models import get_db
         db = get_db()
         
-        # TODO: Add admin check
-        current_user = request.user
+        admin_error = _require_admin_or_403()
+        if admin_error:
+            return admin_error
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         result = db['questions'].update_one(
             {'_id': ObjectId(question_id)},
             {
                 '$set': {
                     'flagged': False,
-                    'reviewed_by': str(current_user.id),
+                    'reviewed_by': current_user_id,
                     'reviewed_at': datetime.utcnow(),
                     'reviewer_action': 'approved'
                 }
@@ -311,7 +339,7 @@ def api_approve_question(question_id):
         if result.matched_count == 0:
             return jsonify({'success': False, 'error': 'Question not found'}), 404
         
-        logger.info(f"Question {question_id} approved by {current_user.id}")
+        logger.info(f"Question {question_id} approved by {current_user_id}")
         
         return jsonify({
             'success': True,
@@ -345,7 +373,12 @@ def api_reject_question(question_id):
         reason = data.get('reason', 'No reason provided')
         action = data.get('action', 'delete')  # delete or regenerate
         
-        current_user = request.user
+        admin_error = _require_admin_or_403()
+        if admin_error:
+            return admin_error
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         result = db['questions'].update_one(
             {'_id': ObjectId(question_id)},
@@ -353,7 +386,7 @@ def api_reject_question(question_id):
                 '$set': {
                     'flagged': False,
                     'status': 'rejected',
-                    'reviewed_by': str(current_user.id),
+                    'reviewed_by': current_user_id,
                     'reviewed_at': datetime.utcnow(),
                     'reviewer_action': 'rejected',
                     'rejection_reason': reason
@@ -364,7 +397,7 @@ def api_reject_question(question_id):
         if result.matched_count == 0:
             return jsonify({'success': False, 'error': 'Question not found'}), 404
         
-        logger.info(f"Question {question_id} rejected by {current_user.id}: {reason}")
+        logger.info(f"Question {question_id} rejected by {current_user_id}: {reason}")
         
         return jsonify({
             'success': True,
@@ -436,7 +469,10 @@ def api_generate_microlesson():
         if not concept:
             return jsonify({'success': False, 'error': 'concept is required'}), 400
 
-        result = generate_micro_lesson(concept, mastery=mastery, user_id=str(request.user.id))
+        current_user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+        result = generate_micro_lesson(concept, mastery=mastery, user_id=current_user_id)
 
         if result.get('error'):
             return jsonify({'success': False, 'error': result.get('error'), 'raw': result.get('raw_response')}), 500

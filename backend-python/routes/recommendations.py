@@ -9,15 +9,23 @@ RESTful API endpoints for personalized recommendations
 import logging
 from flask import Blueprint, request, jsonify, g
 
-from middleware.auth import authenticate_token
+from middleware.auth import authenticate_token, get_current_user_id
 from models.user import User
 from models.user_analytics import UserAnalytics
 from services.recommendation_engine import RecommendationEngine
-from services.interest_analyzer import InterestAnalyzer
+from services.dynamic_recommendation_service import DynamicRecommendationService
+from services.interest_intelligence_engine import InterestIntelligenceEngine
 
 logger = logging.getLogger(__name__)
 
 recommendations_bp = Blueprint('recommendations', __name__)
+
+
+def _current_user_id_or_401():
+    user_id = get_current_user_id()
+    if not user_id:
+        return None, (jsonify({'success': False, 'message': 'Unauthorized'}), 401)
+    return user_id, None
 
 
 @recommendations_bp.route('/generate', methods=['POST'])
@@ -33,7 +41,9 @@ def generate_recommendation():
     }
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         data = request.get_json()
         
         if not data:
@@ -120,7 +130,9 @@ def get_active_recommendation():
     GET /api/recommendations/active
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         recommendation = RecommendationEngine.get_active_recommendation(user_id)
         
@@ -153,7 +165,9 @@ def get_personalized_summary():
     GET /api/recommendations/summary
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         summary = RecommendationEngine.get_personalized_summary(user_id)
         
@@ -179,7 +193,9 @@ def get_recommendation_history():
     GET /api/recommendations/history?limit=5
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         limit = request.args.get('limit', 5, type=int)
         
         limit = max(1, min(limit, 20))  # Clamp between 1-20
@@ -209,7 +225,9 @@ def get_learning_path():
     GET /api/recommendations/learning-path
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         recommendation = RecommendationEngine.get_active_recommendation(user_id)
         
@@ -244,7 +262,9 @@ def get_learning_analytics():
     GET /api/recommendations/analytics
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         analytics = UserAnalytics.get_analytics(user_id)
         
@@ -282,7 +302,9 @@ def analyze_interests():
     }
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         data = request.get_json()
         
         if not data or 'interest_scores' not in data:
@@ -295,42 +317,57 @@ def analyze_interests():
 
         multidim_responses = data.get('multidim_responses')
 
-        # Get user analytics
-        analytics = UserAnalytics.get_analytics(user_id)
+        # Unified analysis using InterestIntelligenceEngine (legacy modules removed).
+        scores = dict(interest_scores or {})
+        if multidim_responses and isinstance(multidim_responses, dict):
+            try:
+                averaged = {}
+                for domain, dims in multidim_responses.items():
+                    if isinstance(dims, dict) and dims:
+                        vals = []
+                        for v in dims.values():
+                            try:
+                                vals.append(float(v))
+                            except (TypeError, ValueError):
+                                continue
+                        if vals:
+                            averaged[domain] = sum(vals) / len(vals)
+                if averaged:
+                    scores.update(averaged)
+            except Exception:
+                pass
 
-        # Prefer SmartInterestEngine if multidimensional responses provided
-        if multidim_responses:
-            from services.smart_interest_engine import SmartInterestEngine
-            analysis_full = SmartInterestEngine.analyze_and_recommend(user_id, multidim_responses, analytics, g.user)
-
-            return jsonify({
-                'success': True,
-                'analysis': {
-                    'primaryInterest': max(analysis_full.get('adjustedScores', {}).items(), key=lambda x: x[1])[0] if analysis_full.get('adjustedScores') else None,
-                    'metrics': analysis_full.get('metrics'),
-                    'suspicion': analysis_full.get('suspicion'),
-                    'tieInfo': analysis_full.get('tieInfo'),
-                    'explanation': analysis_full.get('reasons')
-                }
-            }), 200
-
-        # Analyze interests with LLM (legacy)
-        analysis = InterestAnalyzer.analyze_interest_profile(
-            user_id,
-            interest_scores,
-            analytics,
-            g.user
-        )
+        engine = InterestIntelligenceEngine()
+        result = engine.analyze_interests(interests=scores, behavioral_data=None, user_context=g.user or {}, historical_data=None)
         
         return jsonify({
             'success': True,
             'analysis': {
-                'primaryInterest': analysis['primary_interest'],
-                'primaryScore': analysis['primary_score'],
-                'confidence': analysis['confidence'],
-                'secondaryInterests': analysis['secondary_interests'],
-                'analysis': analysis['analysis'],
-                'generatedAt': analysis['generatedAt'].isoformat() if hasattr(analysis['generatedAt'], 'isoformat') else str(analysis['generatedAt'])
+                'primaryInterest': result.primary_interest,
+                'rankedInterests': result.ranked_interests,
+                'tieDetected': {
+                    'isTie': result.tie_detected.is_tie,
+                    'candidates': result.tie_detected.tie_candidates,
+                    'tieConfidence': result.tie_detected.tie_confidence,
+                    'question': result.tie_detected.resolution_question
+                } if result.tie_detected else None,
+                'anomaly': {
+                    'isAnomalous': result.anomaly_detection.is_anomalous,
+                    'type': result.anomaly_detection.anomaly_type,
+                    'score': result.anomaly_detection.anomaly_score,
+                    'confidence': result.anomaly_detection.confidence,
+                    'recommendation': result.anomaly_detection.recommendation
+                } if result.anomaly_detection else None,
+                'recommendation': {
+                    'careerPaths': result.recommendation.career_paths,
+                    'skillRoadmap': result.recommendation.skill_roadmap,
+                    'learningNextStep': result.recommendation.learning_next_step,
+                    'justification': result.recommendation.justification,
+                    'learningApproach': result.recommendation.learning_approach,
+                } if result.recommendation else None,
+                'qualityMetrics': result.quality_metrics,
+                'dataValidation': result.data_validation,
+                'timestamp': result.timestamp
             }
         }), 200
     
@@ -357,7 +394,9 @@ def get_next_milestones():
     GET /api/recommendations/next-milestones
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         
         recommendation = RecommendationEngine.get_active_recommendation(user_id)
         
@@ -392,7 +431,9 @@ def get_recommended_resources():
     GET /api/recommendations/resources?limit=10
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         limit = request.args.get('limit', 10, type=int)
         
         recommendation = RecommendationEngine.get_active_recommendation(user_id)
@@ -429,7 +470,9 @@ def get_project_ideas():
     GET /api/recommendations/project-ideas?difficulty=Beginner
     """
     try:
-        user_id = str(g.user['_id'])
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
         difficulty = request.args.get('difficulty', None)
         
         recommendation = RecommendationEngine.get_active_recommendation(user_id)
@@ -459,3 +502,110 @@ def get_project_ideas():
             'success': False,
             'message': 'Failed to retrieve project ideas'
         }), 500
+
+
+@recommendations_bp.route('', methods=['GET'])
+@recommendations_bp.route('/', methods=['GET'])
+@authenticate_token
+def get_recommendations():
+    """
+    Get full personalized recommendations (careers, courses, roadmap, skill gap).
+
+    GET /api/recommendations
+    """
+    try:
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+
+        rec = DynamicRecommendationService.get_or_generate(user_id)
+        return jsonify({
+            'success': True,
+            'data': DynamicRecommendationService.to_api_response(rec),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting recommendations: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve recommendations'}), 500
+
+
+@recommendations_bp.route('/careers', methods=['GET'])
+@authenticate_token
+def get_recommended_careers():
+    """GET /api/recommendations/careers"""
+    try:
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+        rec = DynamicRecommendationService.get_or_generate(user_id)
+        return jsonify({
+            'success': True,
+            'skillLevel': rec.get('skillLevel'),
+            'primaryDomain': rec.get('primaryDomain'),
+            'careers': rec.get('careers', []),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting career recommendations: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve careers'}), 500
+
+
+@recommendations_bp.route('/courses', methods=['GET'])
+@authenticate_token
+def get_recommended_courses():
+    """GET /api/recommendations/courses"""
+    try:
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+        rec = DynamicRecommendationService.get_or_generate(user_id)
+        return jsonify({
+            'success': True,
+            'skillLevel': rec.get('skillLevel'),
+            'primaryDomain': rec.get('primaryDomain'),
+            'courses': rec.get('courses', []),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting course recommendations: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve courses'}), 500
+
+
+@recommendations_bp.route('/roadmap', methods=['GET'])
+@authenticate_token
+def get_recommended_roadmap():
+    """GET /api/recommendations/roadmap"""
+    try:
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+        rec = DynamicRecommendationService.get_or_generate(user_id)
+        return jsonify({
+            'success': True,
+            'skillLevel': rec.get('skillLevel'),
+            'primaryDomain': rec.get('primaryDomain'),
+            'roadmap': rec.get('roadmap'),
+            'learningPath': rec.get('learningPath'),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting roadmap: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve roadmap'}), 500
+
+
+@recommendations_bp.route('/skill-gap', methods=['GET'])
+@authenticate_token
+def get_skill_gap():
+    """GET /api/recommendations/skill-gap"""
+    try:
+        user_id, unauthorized = _current_user_id_or_401()
+        if unauthorized:
+            return unauthorized
+        rec = DynamicRecommendationService.get_or_generate(user_id)
+        return jsonify({
+            'success': True,
+            'skillGapAnalysis': rec.get('skillGapAnalysis', {}),
+            'strongestDomain': rec.get('strongestDomain'),
+            'weakestDomain': rec.get('weakestDomain'),
+            'overallScore': rec.get('overallScore'),
+            'skillLevel': rec.get('skillLevel'),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting skill gap: {str(e)}")
+        return jsonify({'success': False, 'message': 'Failed to retrieve skill gap analysis'}), 500

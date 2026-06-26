@@ -67,6 +67,7 @@ class User:
         
         # Learning profile
         'learningLevel': 'Beginner',
+        'skillLevel': 'Beginner',
         'learningGoals': [],
         'weeklyAvailabilityHours': 5,
         'learningPace': 'Self-paced',
@@ -221,14 +222,19 @@ class User:
     
     @staticmethod
     def find_by_verification_token(raw_token: str) -> Optional[Dict[str, Any]]:
-        """Find a user by verification token"""
+        """
+        Find a user by the current verification token (hash match only).
+
+        Expiry and already-verified checks belong in the auth routes so users
+        with expired links get TOKEN_EXPIRED instead of a misleading INVALID_TOKEN.
+        """
         collection = User.get_collection()
-        hashed_token = User.hash_token(raw_token)
-        
-        return collection.find_one({
-            'emailVerificationTokenHash': hashed_token,
-            'emailVerificationTokenExpiry': {'$gt': datetime.utcnow()}
-        })
+        cleaned = (raw_token or '').strip().strip('"').strip("'")
+        if not cleaned:
+            return None
+        hashed_token = User.hash_token(cleaned)
+
+        return collection.find_one({'emailVerificationTokenHash': hashed_token})
     
     @staticmethod
     def find_by_password_reset_token(raw_token: str) -> Optional[Dict[str, Any]]:
@@ -273,14 +279,14 @@ class User:
     @staticmethod
     def set_verification_token(user_id: str) -> str:
         """
-        Set a new verification token for a user
-        
-        Returns:
-            Raw token for email
+        Set a new verification token for a user.
+
+        Does not touch lastVerificationEmailSent — that is updated only after
+        SMTP succeeds (see mark_verification_email_dispatched). Otherwise a
+        failed send would block resend for the whole cooldown window.
         """
         raw_token, hashed_token, expires_at = User.generate_verification_token()
-        
-        # Use MongoDB update with $inc operator
+
         collection = User.get_collection()
         collection.update_one(
             {'_id': ObjectId(user_id)},
@@ -288,22 +294,34 @@ class User:
                 '$set': {
                     'emailVerificationTokenHash': hashed_token,
                     'emailVerificationTokenExpiry': expires_at,
-                    'lastVerificationEmailSent': datetime.utcnow()
                 },
-                '$inc': {'verificationEmailCount': 1}
-            }
+            },
         )
-        
+
         return raw_token
+
+    @staticmethod
+    def mark_verification_email_dispatched(user_id: str) -> None:
+        """Call only after verification email was accepted by SMTP."""
+        collection = User.get_collection()
+        collection.update_one(
+            {'_id': ObjectId(user_id)},
+            {
+                '$set': {'lastVerificationEmailSent': datetime.utcnow()},
+                '$inc': {'verificationEmailCount': 1},
+            },
+        )
     
     @staticmethod
     def mark_email_verified(user_id: str, ip_address: str = None, user_agent: str = None) -> bool:
-        """Mark a user's email as verified"""
+        """Mark a user's email as verified.
+
+        Keep the verification token hash so repeat clicks on the same link
+        resolve to ALREADY_VERIFIED instead of INVALID_TOKEN.
+        """
         return User.update(user_id, {
             'isEmailVerified': True,
             'emailVerifiedAt': datetime.utcnow(),
-            'emailVerificationTokenHash': None,
-            'emailVerificationTokenExpiry': None
         })
     
     @staticmethod
@@ -419,6 +437,16 @@ class User:
         """Convert user document to API response"""
         if not user:
             return None
+
+        def iso(v):
+            if v is None:
+                return None
+            if hasattr(v, 'isoformat'):
+                try:
+                    return v.isoformat()
+                except Exception:
+                    return str(v)
+            return v
         
         response = {
             'id': str(user['_id']),
@@ -428,7 +456,7 @@ class User:
             'phone': user.get('phone'),
             'bio': user.get('bio'),
             'avatar': user.get('avatar'),
-            'date_of_birth': user.get('dateOfBirth'),
+            'date_of_birth': iso(user.get('dateOfBirth')),
             'location': user.get('location'),
             'role': user.get('role'),
             'learning_level': user.get('learningLevel'),
@@ -439,8 +467,8 @@ class User:
             'focus_domains': user.get('focusDomains', []),
             'is_active': user.get('isActive'),
             'is_email_verified': user.get('isEmailVerified'),
-            'created_at': user.get('createdAt'),
-            'updated_at': user.get('updatedAt')
+            'created_at': iso(user.get('createdAt')),
+            'updated_at': iso(user.get('updatedAt'))
         }
         
         if include_sensitive:

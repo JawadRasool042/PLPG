@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { registerUser, loginUser, logoutUser, getCurrentUserData } from '../services/authService';
+import { registerUser, loginUser, logoutUser, getCurrentUserData, type RegisterResult } from '../services/authService';
+import { API_BASE_URL } from '../config/apiBase';
+
+const ACCESS_TOKEN_KEY = 'plpg_access_token';
 
 export interface User {
   id: string;
@@ -67,7 +70,20 @@ export interface UserInterests {
   primaryInterest: string;
   confidence: number;
   allInterests: { domain: string; confidence: number }[];
+  /** Raw 0–10 domain ratings from the assessment sliders (when persisted). */
+  domainScores?: Record<string, number>;
   completedAt: string;
+  assessmentContext?: {
+    known?: string;
+    want?: string;
+    goals?: string;
+  };
+  /** Normalized tags from assessment text (known / want / goals) for personalization + careers. */
+  assessmentTags?: string[];
+  realtimeSignals?: {
+    totalTimeSpentSec?: number;
+    domainsInteracted?: number;
+  };
 }
 
 interface AppState {
@@ -77,7 +93,7 @@ interface AppState {
   hasCompletedOnboarding: boolean;
   userInterests: UserInterests | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (userData: Omit<User, 'id' | 'role'> & { password: string }) => Promise<boolean>;
+  register: (userData: Omit<User, 'id' | 'role'> & { password: string }) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
   initializeAuth: () => void;
@@ -125,74 +141,7 @@ const defaultLearningGoals: LearningGoal[] = [
   { id: '8', title: 'Blockchain', description: 'Smart contracts, Ethereum, and decentralized apps', category: 'Technology', selected: false },
 ];
 
-const defaultQuizzes: Quiz[] = [
-  {
-    id: '1',
-    title: 'Web Development Basics',
-    description: 'Test your knowledge of HTML, CSS, and JavaScript fundamentals',
-    completed: false,
-    questions: [
-      {
-        id: 'q1',
-        text: 'What does HTML stand for?',
-        options: ['HyperText Markup Language', 'High-Level Text Markup', 'Home Tool Markup Language', 'Hyperlink Text Markup'],
-        correctAnswer: 0,
-      },
-      {
-        id: 'q2',
-        text: 'Which CSS property is used to change the text color?',
-        options: ['font-color', 'text-color', 'color', 'text-style'],
-        correctAnswer: 2,
-      },
-      {
-        id: 'q3',
-        text: 'Which method is used to add an element to the end of an array in JavaScript?',
-        options: ['push()', 'append()', 'add()', 'insert()'],
-        correctAnswer: 0,
-      },
-    ],
-  },
-  {
-    id: '2',
-    title: 'Data Science Fundamentals',
-    description: 'Assess your understanding of data analysis and statistics',
-    completed: false,
-    questions: [
-      {
-        id: 'q4',
-        text: 'What is the purpose of a pandas DataFrame?',
-        options: ['Data visualization', 'Data manipulation and analysis', 'Machine learning', 'Web scraping'],
-        correctAnswer: 1,
-      },
-      {
-        id: 'q5',
-        text: 'What does "NaN" stand for in data science?',
-        options: ['Not a Number', 'No Available Number', 'Null and None', 'Number Available Now'],
-        correctAnswer: 0,
-      },
-    ],
-  },
-  {
-    id: '3',
-    title: 'React Concepts',
-    description: 'Test your React knowledge including hooks and components',
-    completed: false,
-    questions: [
-      {
-        id: 'q6',
-        text: 'What is the purpose of useEffect hook?',
-        options: ['State management', 'Side effects and lifecycle', 'Styling components', 'Routing'],
-        correctAnswer: 1,
-      },
-      {
-        id: 'q7',
-        text: 'Which hook is used to manage state in functional components?',
-        options: ['useState', 'useEffect', 'useContext', 'useReducer'],
-        correctAnswer: 0,
-      },
-    ],
-  },
-];
+const defaultQuizzes: Quiz[] = [];
 
 export const useStore = create<AppState>()(
   persist(
@@ -248,29 +197,24 @@ export const useStore = create<AppState>()(
       },
 
       register: async (userData) => {
-        try {
-          const newUser = await registerUser(
-            userData.email,
-            userData.password,
-            userData.firstName,
-            userData.lastName,
-            'Student'
-          );
-          set({
-            user: {
-              id: newUser.id,
-              firstName: newUser.firstName,
-              lastName: newUser.lastName,
-              email: newUser.email,
-              role: newUser.role,
-            },
-            isAuthenticated: true,
-          });
-          return true;
-        } catch (error: any) {
-          console.error('Registration error:', error);
-          return false;
-        }
+        const newUser = await registerUser(
+          userData.email,
+          userData.password,
+          userData.firstName,
+          userData.lastName,
+          'Student'
+        );
+        set({
+          user: {
+            id: newUser.id,
+            firstName: newUser.firstName,
+            lastName: newUser.lastName,
+            email: newUser.email,
+            role: newUser.role,
+          },
+          isAuthenticated: true,
+        });
+        return newUser;
       },
 
       logout: async () => {
@@ -308,22 +252,53 @@ export const useStore = create<AppState>()(
 
             // Fetch user's interests if they exist
             try {
-              const response = await fetch('/api/interests', {
+              const token = localStorage.getItem(ACCESS_TOKEN_KEY);
+              const response = await fetch(`${API_BASE_URL}/auth/me`, {
                 headers: {
-                  'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  ...(token ? { 'Authorization': `Bearer ${token}` } : {})
                 }
               });
               if (response.ok) {
-                const interestData = await response.json();
-                if (interestData.completed) {
+                const meData = await response.json();
+                const assessment = meData?.interestAssessment;
+                if (assessment?.completed) {
+                  const rawScores =
+                    assessment.domainScores ?? assessment.domain_scores ?? {};
+                  const domainScores =
+                    rawScores && typeof rawScores === 'object'
+                      ? Object.fromEntries(
+                          Object.entries(rawScores).map(([k, v]) => [
+                            k,
+                            typeof v === 'number' ? v : Number(v),
+                          ]),
+                        )
+                      : undefined;
+                  const atags = assessment.assessmentTags;
+                  const assessmentTags = Array.isArray(atags)
+                    ? atags.map((t: unknown) => String(t).trim()).filter(Boolean)
+                    : undefined;
+                  const actx = assessment.assessmentContext;
+                  const assessmentContext =
+                    actx && typeof actx === 'object'
+                      ? {
+                          known: actx.known != null ? String(actx.known) : undefined,
+                          want: actx.want != null ? String(actx.want) : undefined,
+                          goals: actx.goals != null ? String(actx.goals) : undefined,
+                        }
+                      : undefined;
                   set({
                     hasCompletedOnboarding: true,
                     userInterests: {
-                      primaryInterest: interestData.primaryInterest,
-                      confidence: interestData.confidence,
-                      allInterests: interestData.allInterests,
-                      completedAt: interestData.completedAt
-                    }
+                      primaryInterest: assessment.primaryInterest,
+                      confidence: assessment.confidence,
+                      allInterests: assessment.allInterests,
+                      ...(domainScores && Object.keys(domainScores).length > 0
+                        ? { domainScores }
+                        : {}),
+                      completedAt: assessment.completedAt,
+                      ...(assessmentContext ? { assessmentContext } : {}),
+                      ...(assessmentTags?.length ? { assessmentTags } : {}),
+                    },
                   });
                 }
               }

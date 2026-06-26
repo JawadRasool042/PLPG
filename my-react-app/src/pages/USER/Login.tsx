@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useStore } from '../../store/useStore';
+import { API_BASE_URL } from '../../config/apiBase';
 
 const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useStore();
 
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [verificationRequired, setVerificationRequired] = useState(false);
+
+  useEffect(() => {
+    const msg = (location.state as { message?: string } | null)?.message;
+    if (msg) {
+      setError(msg);
+    }
+  }, [location.state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,8 +29,7 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
-      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -185,10 +193,6 @@ const Login: React.FC = () => {
               </svg>
               Back to home
             </Link>
-          </div>
-          <div className="mt-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-center">
-            <p className="text-xs text-indigo-700 font-medium">Admin Access</p>
-            <p className="text-xs text-indigo-600 mt-0.5">Username: <strong>admin</strong> &nbsp;|&nbsp; Password: <strong>1234</strong></p>
           </div>
         </div>
       </div>

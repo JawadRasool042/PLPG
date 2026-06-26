@@ -55,3 +55,19 @@ nginx/ssl/*.crt
 .cache/
 temp/
 tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+
+# Python tooling
+.pytest_cache/
+.hypothesis/
+
+# Backend generated data
+backend-python/data/*.sqlite3
+backend-python/data/visuals/
+backend-python/student_results/

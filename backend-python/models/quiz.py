@@ -68,10 +68,11 @@ class Quiz:
     def validate_interest(interest: str) -> bool:
         """Validate if interest is supported"""
         return isinstance(interest, str) and interest.strip() != ''
-        @staticmethod
-        def map_interest_to_topic(interest: str) -> str:
-            """Map interest label to a more descriptive LLM topic."""
-            return Quiz.INTEREST_TOPIC_MAP.get(interest, interest)
+
+    @staticmethod
+    def map_interest_to_topic(interest: str) -> str:
+        """Map interest label to a more descriptive LLM topic."""
+        return Quiz.INTEREST_TOPIC_MAP.get(interest, interest)
     
     @staticmethod
     def validate_level(level: str) -> bool:
@@ -257,3 +258,88 @@ class Quiz:
         response['questions'] = questions
         
         return response
+
+    @staticmethod
+    def get_templates(
+        interest: Optional[str] = None,
+        level: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        query: Dict[str, Any] = {}
+        if interest:
+            query["interest"] = interest
+        if level:
+            query["level"] = level
+        return list(
+            Quiz.get_templates_collection()
+            .find(query)
+            .sort("createdAt", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+
+    @staticmethod
+    def count_templates(
+        interest: Optional[str] = None,
+        level: Optional[str] = None,
+    ) -> int:
+        query: Dict[str, Any] = {}
+        if interest:
+            query["interest"] = interest
+        if level:
+            query["level"] = level
+        return Quiz.get_templates_collection().count_documents(query)
+
+    @staticmethod
+    def create_template(data: Dict[str, Any]) -> Dict[str, Any]:
+        doc = {
+            "interest": data.get("interest"),
+            "level": data.get("level") or "Beginner",
+            "questions": data.get("questions") or [],
+            "totalQuestions": len(data.get("questions") or []),
+            "createdAt": datetime.utcnow(),
+            "updatedAt": datetime.utcnow(),
+        }
+        result = Quiz.get_templates_collection().insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return doc
+
+    @staticmethod
+    def update_template(template_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            obj_id = ObjectId(template_id)
+        except Exception:
+            return None
+        allowed = {"interest", "level", "questions"}
+        update_doc = {k: v for k, v in data.items() if k in allowed}
+        if "questions" in update_doc:
+            update_doc["totalQuestions"] = len(update_doc["questions"])
+        if not update_doc:
+            return Quiz.get_templates_collection().find_one({"_id": obj_id})
+        update_doc["updatedAt"] = datetime.utcnow()
+        Quiz.get_templates_collection().update_one({"_id": obj_id}, {"$set": update_doc})
+        return Quiz.get_templates_collection().find_one({"_id": obj_id})
+
+    @staticmethod
+    def delete_template(template_id: str) -> bool:
+        try:
+            obj_id = ObjectId(template_id)
+        except Exception:
+            return False
+        result = Quiz.get_templates_collection().delete_one({"_id": obj_id})
+        return result.deleted_count > 0
+
+    @staticmethod
+    def template_to_response(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not doc:
+            return None
+        return {
+            "id": str(doc["_id"]),
+            "interest": doc.get("interest"),
+            "level": doc.get("level"),
+            "totalQuestions": doc.get("totalQuestions", 0),
+            "questions": doc.get("questions", []),
+            "createdAt": doc.get("createdAt").isoformat() if doc.get("createdAt") else None,
+            "updatedAt": doc.get("updatedAt").isoformat() if doc.get("updatedAt") else None,
+        }

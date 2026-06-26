@@ -7,7 +7,7 @@ This model handles quiz attempt operations including
 submission, scoring, and retrieval.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from bson import ObjectId
 
@@ -18,6 +18,70 @@ class QuizAttempt:
     """Quiz attempt model class"""
     
     collection_name = 'quiz_attempts'
+
+    @staticmethod
+    def completion_timestamp_iso(attempt: Optional[Dict[str, Any]]) -> Optional[str]:
+        """
+        Single value for API `completedAt`: real finish time when present, else last DB touch,
+        else quiz start, else Mongo ObjectId creation time. Avoids null → client epoch (1969) bugs.
+        """
+        if not attempt:
+            return None
+
+        def _coerce_iso(val: Any) -> Optional[str]:
+            if val is None:
+                return None
+            if isinstance(val, datetime):
+                if val.tzinfo is None:
+                    return val.isoformat() + 'Z'
+                return val.isoformat()
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+            if isinstance(val, (int, float)):
+                if val == 0:
+                    return None
+                ts = float(val)
+                if ts > 1e12:
+                    ts /= 1000.0
+                try:
+                    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+                except (OSError, ValueError, OverflowError):
+                    return None
+            return None
+
+        for key in ('completedAt', 'updatedAt', 'startedAt', 'createdAt'):
+            iso = _coerce_iso(attempt.get(key))
+            if iso:
+                return iso
+
+        try:
+            oid = attempt.get('_id')
+            if oid is None:
+                return None
+            if isinstance(oid, ObjectId):
+                gt = oid.generation_time
+                return (gt.isoformat() + 'Z') if gt.tzinfo is None else gt.isoformat()
+            if isinstance(oid, str) and oid:
+                gt = ObjectId(oid).generation_time
+                return (gt.isoformat() + 'Z') if gt.tzinfo is None else gt.isoformat()
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _normalize_choice(value: Any) -> str:
+        """Normalize submitted answers like 'A)', 'A. text', or 'Option A' to 'A'."""
+        raw = str(value or '').strip().upper()
+        if not raw:
+            return ''
+        if raw.startswith('OPTION '):
+            parts = raw.split()
+            if len(parts) >= 2 and parts[1][:1] in {'A', 'B', 'C', 'D'}:
+                return parts[1][:1]
+        first = raw[:1]
+        if first in {'A', 'B', 'C', 'D'}:
+            return first
+        return raw
     
     @staticmethod
     def get_collection():
@@ -106,8 +170,10 @@ class QuizAttempt:
         results = []
         
         for idx, question in enumerate(questions):
-            user_answer = answers.get(str(idx), '')
-            correct_answer = question.get('answer', '')
+            user_answer_raw = answers.get(str(idx), '')
+            correct_answer_raw = question.get('answer', '')
+            user_answer = QuizAttempt._normalize_choice(user_answer_raw)
+            correct_answer = QuizAttempt._normalize_choice(correct_answer_raw)
             is_correct = user_answer == correct_answer
             
             if is_correct:
@@ -230,7 +296,7 @@ class QuizAttempt:
             'score': attempt.get('score'),
             'correctCount': attempt.get('correctCount'),
             'totalQuestions': attempt.get('totalQuestions'),
-            'completedAt': attempt.get('completedAt').isoformat() if attempt.get('completedAt') else None,
+            'completedAt': QuizAttempt.completion_timestamp_iso(attempt),
             'timeSpent': attempt.get('timeSpent', 0),
             'timePerQuestion': attempt.get('timePerQuestion', 0),
             'estimatedDifficulty': attempt.get('estimatedDifficulty', 'Beginner'),

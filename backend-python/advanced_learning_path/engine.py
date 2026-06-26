@@ -21,6 +21,7 @@ from sklearn.preprocessing import StandardScaler
 from .charts import generate_domain_comparison, generate_growth_graph, generate_radar_chart, generate_skill_heatmap
 from .schemas import LearningInsight, LearningProfile, RoadmapItem
 from .storage import LearningPathRepository
+from utils.market_context import align_careers_to_user_progress, market_metadata, normalize_careers_for_market
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,31 @@ PROFILE_LABELS = {
     "Explorer": set(DOMAINS),
     "Beginner": set(DOMAINS),
     "Advanced Learner": {"Coding", "Data Science", "Cybersecurity", "AI & Machine Learning", "Cloud Computing"},
+}
+
+# Normalize API / UI labels to DOMAINS keys (avoids silent fallback to Coding roadmap).
+DOMAIN_ALIASES: Dict[str, str] = {
+    "coding": "Coding",
+    "web development": "Web Development",
+    "web dev": "Web Development",
+    "game development": "Game Development",
+    "game dev": "Game Development",
+    "cybersecurity": "Cybersecurity",
+    "cyber security": "Cybersecurity",
+    "data science": "Data Science",
+    "mobile development": "Mobile Development",
+    "mobile dev": "Mobile Development",
+    "cloud computing": "Cloud Computing",
+    "cloud": "Cloud Computing",
+    "ai & machine learning": "AI & Machine Learning",
+    "ai/ml": "AI & Machine Learning",
+    "machine learning": "AI & Machine Learning",
+    "artificial intelligence": "AI & Machine Learning",
+    "physical games / sports": "Physical Games / Sports",
+    "physical games": "Physical Games / Sports",
+    "physical sports": "Physical Games / Sports",
+    "sports": "Physical Games / Sports",
+    "fitness": "Physical Games / Sports",
 }
 
 NLP_KEYWORDS = {
@@ -98,135 +124,40 @@ class AdvancedResult:
 class AdvancedLearningPathEngine:
     """Hybrid intelligence engine combining weighted scoring, rules, and ML."""
 
-    CAREER_DATA = {
-        "Coding": {
-            "roles": ["Software Engineer", "Backend Developer", "Systems Programmer"],
-            "freelancing": ["API development", "automation scripts", "bug fixing"],
-            "remote": ["Backend Engineer", "Platform Engineer", "Software Developer"],
-            "startup": ["MVP builder", "Technical co-founder", "Product engineer"],
-            "tools": ["Python", "Git", "Docker", "Linux", "Testing"],
-            "salary_range": "$70k-$180k",
-            "market_demand": 9.5,
-            "future_growth": 9.4,
-            "certifications": ["AWS Certified Developer", "Microsoft Azure Developer", "Oracle Java"],
-        },
-        "Web Development": {
-            "roles": ["Frontend Developer", "Full Stack Developer", "Web Architect"],
-            "freelancing": ["Landing pages", "e-commerce sites", "web apps"],
-            "remote": ["Frontend Engineer", "UI Engineer", "Web Developer"],
-            "startup": ["Rapid website delivery", "SaaS MVPs", "growth engineering"],
-            "tools": ["HTML/CSS", "JavaScript", "React", "Node.js", "Figma"],
-            "salary_range": "$60k-$160k",
-            "market_demand": 9.2,
-            "future_growth": 9.0,
-            "certifications": ["Meta Front-End Developer", "Google UX Design", "freeCodeCamp"],
-        },
-        "Game Development": {
-            "roles": ["Game Developer", "Gameplay Programmer", "Technical Artist"],
-            "freelancing": ["Prototype development", "game systems", "tooling"],
-            "remote": ["Unity Developer", "Unreal Developer", "Gameplay Engineer"],
-            "startup": ["Indie studio founder", "mobile games", "VR/AR experiences"],
-            "tools": ["Unity", "Unreal Engine", "Blender", "C#", "C++"],
-            "salary_range": "$50k-$150k",
-            "market_demand": 7.5,
-            "future_growth": 7.9,
-            "certifications": ["Unity Certified Developer", "Unreal Authorized Instructor"],
-        },
-        "Cybersecurity": {
-            "roles": ["Security Analyst", "Penetration Tester", "Security Engineer"],
-            "freelancing": ["Vulnerability assessment", "security audits", "hardening"],
-            "remote": ["Security Operations", "SOC Analyst", "Cloud Security"],
-            "startup": ["Security tools", "privacy products", "compliance services"],
-            "tools": ["Wireshark", "Nmap", "Burp Suite", "Linux", "SIEM"],
-            "salary_range": "$80k-$200k",
-            "market_demand": 9.7,
-            "future_growth": 9.6,
-            "certifications": ["CompTIA Security+", "CEH", "OSCP", "CISSP"],
-        },
-        "Data Science": {
-            "roles": ["Data Scientist", "ML Engineer", "Data Analyst"],
-            "freelancing": ["dashboards", "forecasting", "automation analytics"],
-            "remote": ["Analytics Engineer", "Data Scientist", "ML Engineer"],
-            "startup": ["AI insights", "prediction products", "recommendation systems"],
-            "tools": ["Python", "Pandas", "NumPy", "SQL", "Power BI"],
-            "salary_range": "$75k-$190k",
-            "market_demand": 9.4,
-            "future_growth": 9.5,
-            "certifications": ["Google Data Analytics", "IBM Data Science", "Microsoft Data Analyst"],
-        },
-        "Mobile Development": {
-            "roles": ["iOS Developer", "Android Developer", "Mobile Engineer"],
-            "freelancing": ["mobile apps", "cross-platform apps", "app modernization"],
-            "remote": ["Mobile Engineer", "Flutter Developer", "Android/iOS Developer"],
-            "startup": ["consumer apps", "mobile-first SaaS", "subscription apps"],
-            "tools": ["Swift", "Kotlin", "Flutter", "React Native", "Firebase"],
-            "salary_range": "$65k-$175k",
-            "market_demand": 8.8,
-            "future_growth": 8.9,
-            "certifications": ["Google Associate Android Developer", "Apple Swift"],
-        },
-        "Cloud Computing": {
-            "roles": ["Cloud Engineer", "DevOps Engineer", "SRE"],
-            "freelancing": ["infrastructure automation", "deployment pipelines", "cloud migrations"],
-            "remote": ["Platform Engineer", "DevOps", "Cloud Architect"],
-            "startup": ["infra tooling", "FinOps", "scalable SaaS"],
-            "tools": ["AWS", "Azure", "GCP", "Docker", "Kubernetes"],
-            "salary_range": "$85k-$210k",
-            "market_demand": 9.6,
-            "future_growth": 9.6,
-            "certifications": ["AWS Solutions Architect", "Azure Admin", "CKA"],
-        },
-        "AI & Machine Learning": {
-            "roles": ["ML Engineer", "AI Researcher", "Applied Scientist"],
-            "freelancing": ["LLM apps", "automation", "predictive models"],
-            "remote": ["ML Engineer", "AI Engineer", "Applied Scientist"],
-            "startup": ["AI copilots", "recommendation systems", "data products"],
-            "tools": ["Python", "PyTorch", "TensorFlow", "scikit-learn", "LangChain"],
-            "salary_range": "$90k-$240k",
-            "market_demand": 10.0,
-            "future_growth": 10.0,
-            "certifications": ["DeepLearning.AI", "Google ML Engineer", "TensorFlow Developer"],
-        },
-        "Physical Games / Sports": {
-            "roles": ["Athlete", "Coach", "Sports Scientist"],
-            "freelancing": ["training plans", "coaching", "fitness consulting"],
-            "remote": ["sports analytics", "online coaching", "fitness content"],
-            "startup": ["fitness communities", "sports performance", "health products"],
-            "tools": ["sports analytics", "wearables", "video analysis", "nutrition tracking"],
-            "salary_range": "$35k-$120k+",
-            "market_demand": 7.2,
-            "future_growth": 7.8,
-            "certifications": ["NASM", "ACE", "Sports coaching certification"],
-        },
-    }
-
-    DOMAIN_ROADMAPS = {
-        "Coding": {
-            "Beginner": ["Python syntax", "control flow", "functions", "debugging basics"],
-            "Intermediate": ["OOP", "data structures", "testing", "APIs"],
-            "Advanced": ["system design", "performance", "architecture", "scalability"],
-        },
-        "Web Development": {
-            "Beginner": ["HTML", "CSS", "JavaScript", "responsive design"],
-            "Intermediate": ["React", "APIs", "auth", "state management"],
-            "Advanced": ["architecture", "testing", "performance", "deployment"],
-        },
-        "Data Science": {
-            "Beginner": ["statistics", "Python", "EDA", "visualization"],
-            "Intermediate": ["SQL", "feature engineering", "ML basics", "model evaluation"],
-            "Advanced": ["deep learning", "MLOps", "big data", "experimentation"],
-        },
-        "AI & Machine Learning": {
-            "Beginner": ["Python", "math fundamentals", "ML concepts", "datasets"],
-            "Intermediate": ["supervised learning", "neural networks", "NLP", "CV"],
-            "Advanced": ["LLMs", "RAG", "optimization", "deployment"],
-        },
-    }
-
     def __init__(self, repository: Optional[LearningPathRepository] = None):
         self.repository = repository or LearningPathRepository()
         self._model_bundle = None
         self._model_labels: List[str] = []
+
+    def _canonical_domain(self, domain: Optional[str]) -> str:
+        """Map free-text or alias labels to a DOMAINS key so roadmaps never default to Coding by accident."""
+        if not domain:
+            return "Coding"
+        raw = str(domain).strip()
+        if raw in DOMAINS:
+            return raw
+        key = raw.lower()
+        if key in DOMAIN_ALIASES:
+            return DOMAIN_ALIASES[key]
+        for d in DOMAINS:
+            if d.lower() == key:
+                return d
+        return raw
+
+    @staticmethod
+    def _duration_weeks_label(days: int) -> str:
+        """Human-readable week range for roadmap cards (UI 'Duration: X-Y weeks')."""
+        try:
+            d = int(days)
+        except (TypeError, ValueError):
+            d = 0
+        if d <= 0:
+            return "4-6 weeks"
+        w = d / 7.0
+        lo = max(2, int(round(w * 0.78)))
+        hi = max(lo + 1, int(round(w * 1.22)))
+        hi = min(hi, lo + 10)
+        return f"{lo}-{hi} weeks"
 
     # -------------------------------
     # public API
@@ -244,11 +175,28 @@ class AdvancedLearningPathEngine:
 
         profile = self._classify_profile(ranked, signals)
         top_domains = self._build_top_domain_payload(ranked, signals, profile_inputs)
-        roadmap = self.build_roadmap(top_domains[0]["domain"], signals, payload)
-        career_paths = self.build_career_intelligence(top_domains)
+        primary_domain = top_domains[0]["domain"] if top_domains else self._canonical_domain(DOMAINS[0])
+
+        path_result = self.generate_roadmap(primary_domain, payload)
+        roadmap = path_result.get("roadmap") or {}
+        careers_detailed = path_result.get("careers_detailed") or []
+        career_paths = {primary_domain: path_result.get("career_paths") or {"roles": [c.get("title") for c in careers_detailed if c.get("title")]}}
+        courses = ((roadmap.get("resources") or {}).get("courses") or [])
+        projects_list = roadmap.get("suggested_projects") or []
+        if top_domains:
+            top_domains[0]["best_courses"] = courses[:8]
+            top_domains[0]["best_projects"] = projects_list[:6]
+            top_domains[0]["career_paths"] = career_paths.get(primary_domain, {})
+            basic_topics = (roadmap.get("basic") or roadmap.get("beginner") or {}).get("topics") or []
+            if basic_topics:
+                top_domains[0]["fastest_path"] = f"Start with {', '.join(basic_topics[:3])}."
+
         skills_gap = self._build_skills_gap(top_domains, signals)
-        projects = self._build_projects(top_domains)
-        certifications = self._build_certifications(top_domains)
+        projects = [
+            {"domain": primary_domain, "project": project, "difficulty": "progressive"}
+            for project in projects_list[:9]
+        ]
+        certifications: List[str] = []
         gamification = self._build_gamification(signals, top_domains)
         visuals = self._build_visual_analytics(top_domains, profile_inputs)
 
@@ -268,13 +216,15 @@ class AdvancedLearningPathEngine:
                 "version": "3.0",
                 "generated_at": datetime.utcnow().isoformat(),
                 "model": self._model_bundle["name"] if self._model_bundle else "weighted-hybrid",
+                "careers_detailed": careers_detailed,
+                "source": "openai+ml",
             },
         )
 
         if user_id:
             self.repository.save_assessment(user_id, payload, signals, result.to_dict())
             self.repository.save_prediction(user_id, top_domains[0]["domain"], result.to_dict(), result.confidence_scores, top_domains)
-            self.repository.save_roadmap(user_id, top_domains[0]["domain"], roadmap, career_paths)
+            self.repository.save_roadmap(user_id, primary_domain, roadmap, career_paths)
             self.repository.save_progress(
                 user_id,
                 top_domains[0]["domain"],
@@ -286,6 +236,44 @@ class AdvancedLearningPathEngine:
             )
 
         return result
+
+    def score_interests_only(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fast interest scoring from explicit ratings + signals only.
+        Skips OpenAI roadmap/career generation (use generate_roadmap for that).
+        """
+        explicit = self._normalize_explicit_scores(
+            payload.get("scores") or payload.get("interest_scores") or {}
+        )
+        profile_inputs = payload.get("user", {}) or {}
+        signals = self._collect_signals(explicit, profile_inputs, payload)
+        combined = self._score_domains(signals)
+        ranked = sorted(combined.items(), key=lambda item: item[1], reverse=True)
+        profile = self._classify_profile(ranked, signals)
+        top_domains = self._build_top_domain_payload(ranked, signals, profile_inputs)
+        top = top_domains[0] if top_domains else {
+            "domain": self._canonical_domain(DOMAINS[0]),
+            "confidence": 0.0,
+            "model_confidence": 0.0,
+        }
+        return {
+            "user_profile": profile["profile"],
+            "top_domains": top_domains,
+            "primary_interest": top["domain"],
+            "predicted_interest": top["domain"],
+            "confidence": round(float(top.get("confidence", 0.0)), 4),
+            "model_confidence": round(float(top.get("model_confidence", 0.0)), 4),
+            "all_probabilities": {domain: round(score, 2) for domain, score in combined.items()},
+            "top_3_interests": top_domains[:3],
+            "top_2_interests": top_domains[:2],
+            "signals": signals,
+            "metadata": {
+                "version": "3.0",
+                "generated_at": datetime.utcnow().isoformat(),
+                "source": "fast-scoring",
+                "careers_detailed": [],
+            },
+        }
 
     def predict_interest(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         result = self.analyze_user(payload)
@@ -302,6 +290,7 @@ class AdvancedLearningPathEngine:
             "top_2_interests": result.top_domains[:2],
             "roadmap": result.roadmap,
             "career_paths": result.career_paths,
+            "careers_detailed": result.metadata.get("careers_detailed") or [],
             "skills_gap": result.skills_gap,
             "projects": result.projects,
             "certifications": result.certifications,
@@ -327,16 +316,438 @@ class AdvancedLearningPathEngine:
             "gamification": result.gamification,
         }
 
-    def generate_roadmap(self, domain: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        signals = self._collect_signals(self._normalize_explicit_scores(payload.get("scores") or {}), payload.get("user", {}), payload)
-        roadmap = self.build_roadmap(domain, signals, payload)
-        career = self._career_payload(domain)
+    def _extract_resume_terms(self, user: Dict[str, Any]) -> List[str]:
+        text = " ".join(
+            str(user.get(key, "") or "")
+            for key in ["known", "want", "goals", "learning_goals", "career_goals", "bio"]
+        ).strip()
+        parts = re.split(r"[,;/\n]+", text.lower()) if text else []
+        base = list(dict.fromkeys([p.strip() for p in parts if p.strip()]))
+        extra = user.get("assessment_tags") or user.get("assessmentTags") or []
+        if isinstance(extra, str):
+            extra = [x.strip().lower() for x in extra.split(",") if x.strip()]
+        elif isinstance(extra, list):
+            extra = [str(x).strip().lower() for x in extra if str(x).strip()]
+        merged = base + extra
+        return list(dict.fromkeys([t for t in merged if t]))
+
+    def _resume_outline_bundle(
+        self,
+        domain: str,
+        roadmap: Dict[str, Any],
+        user: Dict[str, Any],
+        signals: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        terms = self._extract_resume_terms(user)
+        gaps = self._estimate_skill_gap(domain, signals)
+        adaptive = roadmap.get("adaptive_state") or {}
+        next_step = roadmap.get("next_step") or {}
+        bullets: List[str] = []
+
+        style = str(user.get("learning_style") or user.get("learningStyle") or "").strip()
+        if style:
+            bullets.append(f"Learning cadence: {style} — match this tone in your summary.")
+
+        known = str(user.get("known") or "").strip()
+        want = str(user.get("want") or "").strip()
+        goals = str(user.get("goals") or user.get("learning_goals") or "").strip()
+        if known:
+            bullets.append(f"Strengths / background to feature: {known[:220]}{'…' if len(known) > 220 else ''}")
+        if want:
+            bullets.append(f"Target growth areas: {want[:220]}{'…' if len(want) > 220 else ''}")
+        if goals:
+            bullets.append(f"Goals line for summary: {goals[:220]}{'…' if len(goals) > 220 else ''}")
+
+        stage = adaptive.get("current_stage")
+        explicit_map = signals.get("explicit") or {}
+        try:
+            slider_primary = float(explicit_map.get(domain, 0) or 0)
+        except (TypeError, ValueError):
+            slider_primary = 0.0
+        if slider_primary > 0:
+            bullets.append(
+                f"Self-rated focus in {domain}: ~{round(max(0.0, min(100.0, (slider_primary / 10.0) * 100.0)))}% "
+                f"(from your assessment sliders)."
+            )
+        if stage:
+            mastery = adaptive.get("mastery_level")
+            eng = adaptive.get("engagement_score")
+            bullets.append(
+                f"{domain} roadmap stage: {stage} (mastery ~{round(float(mastery or 0) * 100)}%, "
+                f"engagement ~{round(float(eng or 0) * 100)}%)."
+            )
+
+        if gaps:
+            bullets.append("Skill-gap keywords to weave into experience bullets: " + ", ".join(gaps[:6]))
+
+        ns_title = next_step.get("title")
+        ns_why = next_step.get("why")
+        if ns_title:
+            line = f"Next proof point to complete: {ns_title}"
+            if ns_why:
+                line += f" — {ns_why}"
+            bullets.append(line[:400])
+
+        topics: List[str] = []
+        for key in ("basic", "intermediate", "advanced", "expert"):
+            block = roadmap.get(key)
+            if not isinstance(block, dict) and key == "basic":
+                block = roadmap.get("beginner")
+            if isinstance(block, dict):
+                topics.extend(block.get("topics") or [])
+        if topics:
+            unique_topics = list(dict.fromkeys(topics))
+            bullets.append("Portfolio themes to demonstrate: " + ", ".join(unique_topics[:8]))
+
+        certs = roadmap.get("certifications") or []
+        if isinstance(certs, list) and certs:
+            bullets.append("Certifications to list when ready: " + ", ".join(str(c) for c in certs[:5]))
+
+        headline = f"{domain} learner — personalized from your profile, quiz signals, and roadmap."
+        return {"headline": headline, "keywords": terms[:12], "bullets": bullets[:14]}
+
+    def _enrich_payload_with_quiz_caliber(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        caliber = payload.get("quiz_caliber") or {}
+        if not isinstance(caliber, dict):
+            caliber = {}
+        merged = dict(payload)
+        mastery = caliber.get("mastery_level")
+        if mastery is not None:
+            merged["mastery_level"] = mastery
+            merged["quiz_accuracy"] = mastery
+        attempts = int(caliber.get("attempt_count") or 0)
+        if merged.get("engagement_score") is None and attempts > 0:
+            merged["engagement_score"] = min(1.0, attempts / 5.0)
+        return merged
+
+    def _build_roadmap_from_openai(
+        self,
+        domain: str,
+        signals: Dict[str, Any],
+        payload: Dict[str, Any],
+        openai_bundle: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Merge OpenAI-generated topics with ML adaptive pacing (no static catalogs)."""
+        openai_roadmap = openai_bundle.get("roadmap") or {}
+        basic_block = openai_roadmap.get("basic") or openai_roadmap.get("beginner") or {}
+        intermediate_block = openai_roadmap.get("intermediate") or {}
+        advanced_block = openai_roadmap.get("advanced") or {}
+        expert_block = openai_roadmap.get("expert") or {}
+
+        basic = list(basic_block.get("all_topics") or basic_block.get("topics") or [])
+        intermediate = list(intermediate_block.get("all_topics") or intermediate_block.get("topics") or [])
+        advanced = list(advanced_block.get("all_topics") or advanced_block.get("topics") or [])
+        expert = list(expert_block.get("all_topics") or expert_block.get("topics") or [])
+        if not basic and not intermediate and not advanced and not expert:
+            raise ValueError("OpenAI roadmap returned no topics")
+
+        weekly_hours = float(
+            (payload.get("user") or {}).get("weekly_availability_hours")
+            or payload.get("weekly_availability_hours")
+            or 6
+        )
+        weekly_hours = max(1.0, min(40.0, weekly_hours))
+
+        projects = list(openai_roadmap.get("suggested_projects") or [])
+        resources_block = openai_roadmap.get("resources") or {}
+        courses = list(resources_block.get("courses") or [])
+        course_cards = list(resources_block.get("course_cards") or [])
+        career_roles = list(openai_roadmap.get("career_paths") or [])
+
+        adaptive_metrics = self._adaptive_metrics(domain, signals, payload)
+        current_stage = self._determine_stage(adaptive_metrics)
+        strategy = self._next_step_strategy(adaptive_metrics, current_stage)
+        stage_topics = self._adaptive_topic_sequence(basic, intermediate, advanced, expert, current_stage, strategy)
+
+        allow_expert_now = adaptive_metrics["mastery_level"] >= 0.85 and adaptive_metrics["engagement_score"] >= 0.72
+        if not allow_expert_now:
+            stage_topics["expert"] = stage_topics["expert"][:1]
+
+        sessions_per_week = max(2, int(round(weekly_hours / 2.5)))
+        session_minutes = int(round((weekly_hours * 60) / sessions_per_week))
+        if strategy.get("path_modifier") == "short":
+            sessions_per_week = max(2, sessions_per_week - 1)
+            session_minutes = max(30, min(90, session_minutes))
+
+        weekly_plan = {
+            "hours_per_week": weekly_hours,
+            "sessions_per_week": sessions_per_week,
+            "minutes_per_session": max(30, min(120, session_minutes)),
+            "cadence": "project-first" if (signals.get("learning_style") or {}).get(domain, 0) > 0.5 else "mixed",
+        }
+
+        stage_complexity = {"basic": 1.0, "intermediate": 1.3, "advanced": 1.7, "expert": 2.2}
+        mastery = float(adaptive_metrics.get("mastery_level", 0.5))
+        progression = float(adaptive_metrics.get("progression_completeness", 0.0))
+        engagement = float(adaptive_metrics.get("engagement_score", 0.5))
+        pace_modifier = max(0.65, min(1.25, 1.0 - (0.18 * progression) - (0.12 * max(0.0, engagement - 0.5))))
+        mastery_modifier = max(0.75, min(1.35, 1.15 - (0.4 * mastery)))
+
+        def _stage_duration_days(stage_key: str, topics: List[str]) -> int:
+            topic_count = max(1, len(topics))
+            complexity = stage_complexity.get(stage_key, 1.0)
+            estimated_hours = topic_count * 5.5 * complexity * pace_modifier * mastery_modifier
+            days = int(round((estimated_hours / max(weekly_hours, 1.0)) * 7))
+            bounds = {"basic": (14, 90), "intermediate": (21, 150), "advanced": (28, 240), "expert": (35, 365)}
+            lo, hi = bounds.get(stage_key, (14, 365))
+            return max(lo, min(hi, days))
+
+        basic_days = _stage_duration_days("basic", stage_topics["basic"])
+        intermediate_days = _stage_duration_days("intermediate", stage_topics["intermediate"])
+        advanced_days = _stage_duration_days("advanced", stage_topics["advanced"])
+        expert_days = _stage_duration_days("expert", stage_topics["expert"])
+
+        basic_label = str(basic_block.get("duration_label") or self._duration_weeks_label(basic_days))
+        intermediate_label = str(intermediate_block.get("duration_label") or self._duration_weeks_label(intermediate_days))
+        advanced_label = str(advanced_block.get("duration_label") or self._duration_weeks_label(advanced_days))
+        expert_label = str(expert_block.get("duration_label") or self._duration_weeks_label(expert_days))
+
+        if strategy.get("recommendation_type") == "project":
+            next_step = {"type": "project", "title": projects[0] if projects else "Applied capstone", "why": strategy["reason"], "stage": current_stage}
+        elif strategy.get("recommendation_type") == "course":
+            next_step = {"type": "course", "title": courses[0] if courses else "Core concept refresher", "why": strategy["reason"], "stage": current_stage}
+        else:
+            next_step = {
+                "type": "course_then_project",
+                "title": f"{courses[0]} -> {projects[0]}" if courses and projects else "Guided practice path",
+                "why": strategy["reason"],
+                "stage": current_stage,
+            }
+
+        explainability = {
+            "factors": adaptive_metrics,
+            "decision_policy": {
+                "current_stage": current_stage,
+                "expert_gate_open": allow_expert_now,
+                "strategy": strategy,
+            },
+            "reason_summary": [
+                f"Roadmap generated by OpenAI and adapted to quiz caliber for {domain}.",
+                f"Mastery={round(adaptive_metrics['mastery_level'] * 100)}%, engagement={round(adaptive_metrics['engagement_score'] * 100)}%",
+                f"Recommended quiz difficulty: {openai_bundle.get('recommended_quiz_difficulty', 'beginner')}",
+            ],
+        }
+
         return {
+            "basic": {
+                "topics": stage_topics["basic"],
+                "all_topics": basic,
+                "duration_days": basic_days,
+                "duration_label": basic_label,
+                "stage_projects": list(basic_block.get("stage_projects") or [])[:6],
+                "milestones": [
+                    "Complete foundational topics from your quiz-caliber profile",
+                    "Pass baseline concept checks at recommended difficulty",
+                    f"Build {sessions_per_week} sessions/week habit",
+                ],
+            },
+            "intermediate": {
+                "topics": stage_topics["intermediate"],
+                "all_topics": intermediate,
+                "duration_days": intermediate_days,
+                "duration_label": intermediate_label,
+                "stage_projects": list(intermediate_block.get("stage_projects") or [])[:6],
+                "milestones": [
+                    "Complete guided project cycle",
+                    "Improve debugging and review depth",
+                    "Demonstrate repeatable implementation quality",
+                ],
+            },
+            "advanced": {
+                "topics": stage_topics["advanced"],
+                "all_topics": advanced,
+                "duration_days": advanced_days,
+                "duration_label": advanced_label,
+                "stage_projects": list(advanced_block.get("stage_projects") or [])[:6],
+                "milestones": [
+                    f"Deliver production-style {domain} features",
+                    "Apply performance + architecture trade-offs",
+                    "Prepare portfolio pieces for mid-level roles",
+                ],
+            },
+            "expert": {
+                "topics": stage_topics["expert"],
+                "all_topics": expert,
+                "duration_days": expert_days,
+                "duration_label": expert_label,
+                "stage_projects": list(expert_block.get("stage_projects") or [])[:6],
+                "milestones": [
+                    f"Deliver {domain} capstone",
+                    "Lead system design and optimization decisions",
+                    "Prepare portfolio and interview narrative for senior roles",
+                ],
+            },
+            "weekly_study_plan": weekly_plan,
+            "suggested_projects": projects,
+            "resources": {
+                "courses": courses,
+                "course_cards": course_cards,
+            },
+            "career_paths": career_roles,
+            "skill_gaps": self._estimate_skill_gap(domain, signals),
+            "adaptive_state": {
+                "interest_strength": adaptive_metrics["interest_strength"],
+                "mastery_level": adaptive_metrics["mastery_level"],
+                "progression_completeness": adaptive_metrics["progression_completeness"],
+                "engagement_score": adaptive_metrics["engagement_score"],
+                "dropout_risk": adaptive_metrics["dropout_risk"],
+                "current_stage": current_stage,
+            },
+            "next_step": next_step,
+            "explainability": explainability,
+            "source": "openai+ml",
+        }
+
+    def _fetch_openai_learning_bundle(
+        self,
+        domain: str,
+        signals: Dict[str, Any],
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        from .openai_path_generator import OpenAIPathGeneratorError, generate_learning_path_via_openai
+
+        domain = self._canonical_domain(domain)
+        payload = self._enrich_payload_with_quiz_caliber(payload)
+        user = payload.get("user") or {}
+        secondary_raw = payload.get("secondary_domains") or []
+        if isinstance(secondary_raw, str):
+            secondary_raw = [secondary_raw]
+        secondary_domains = [str(s).strip() for s in secondary_raw if str(s).strip()]
+        try:
+            return generate_learning_path_via_openai(
+                domain=domain,
+                user=user,
+                quiz_caliber=payload.get("quiz_caliber") or {},
+                interest_signals=signals,
+                secondary_domains=secondary_domains,
+            )
+        except OpenAIPathGeneratorError as exc:
+            logger.error("OpenAI learning path generation failed: %s", exc)
+            raise
+
+    def generate_roadmap(self, domain: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        domain = self._canonical_domain(domain)
+        payload = self._enrich_payload_with_quiz_caliber(payload)
+        user_id = str(payload.get("user_id") or payload.get("userId") or "").strip()
+        force_regenerate = bool(payload.get("force_regenerate") or payload.get("forceRegenerate"))
+
+        if user_id and not force_regenerate:
+            from services.learning_path_cache import (
+                compute_invalidation_key,
+                get_cached_learning_path,
+                get_stale_learning_path,
+                save_learning_path,
+            )
+
+            invalidation_key = compute_invalidation_key(user_id)
+            cached = get_cached_learning_path(user_id, domain, invalidation_key=invalidation_key)
+            if cached:
+                cached.setdefault("domain", domain)
+                cached.setdefault("metadata", {})
+                if isinstance(cached["metadata"], dict):
+                    cached["metadata"]["source"] = "cache"
+                return cached
+        else:
+            from services.learning_path_cache import (
+                compute_invalidation_key,
+                get_stale_learning_path,
+                save_learning_path,
+            )
+            invalidation_key = compute_invalidation_key(user_id) if user_id else ""
+
+        signals = self._collect_signals(
+            self._normalize_explicit_scores(payload.get("scores") or {}),
+            payload.get("user", {}),
+            payload,
+        )
+
+        try:
+            openai_bundle = self._fetch_openai_learning_bundle(domain, signals, payload)
+        except Exception as exc:
+            logger.exception("OpenAI learning path generation failed: %s", exc)
+            if user_id:
+                stale = get_stale_learning_path(user_id, domain)
+                if stale:
+                    meta = dict(stale.get("metadata") or {}) if isinstance(stale.get("metadata"), dict) else {}
+                    meta.update({
+                        "source": "stale_cache",
+                        "refresh_error": str(exc)[:500],
+                    })
+                    stale["metadata"] = meta
+                    stale["stale"] = True
+                    return stale
+            from utils.offline_learning_templates import build_offline_openai_bundle
+
+            openai_bundle = build_offline_openai_bundle(
+                domain,
+                quiz_caliber=payload.get("quiz_caliber") or {},
+                user=payload.get("user") or {},
+            )
+            logger.warning("Falling back to offline learning path template for domain=%s", domain)
+
+        try:
+            roadmap = self._build_roadmap_from_openai(domain, signals, payload, openai_bundle)
+        except Exception as exc:
+            logger.warning("Roadmap build failed (%s); using offline template for domain=%s", exc, domain)
+            from utils.offline_learning_templates import build_offline_openai_bundle
+
+            openai_bundle = build_offline_openai_bundle(
+                domain,
+                quiz_caliber=payload.get("quiz_caliber") or {},
+                user=payload.get("user") or {},
+            )
+            roadmap = self._build_roadmap_from_openai(domain, signals, payload, openai_bundle)
+        careers_detailed = normalize_careers_for_market(
+            openai_bundle.get("careers_detailed") or [],
+            domain=domain,
+        )
+        quiz_caliber = payload.get("quiz_caliber") or {}
+        careers_detailed, user_career_level, careers_by_level = align_careers_to_user_progress(
+            careers_detailed, quiz_caliber
+        )
+        resume_outline = openai_bundle.get("resume_outline") or {}
+        secondary_insights = openai_bundle.get("secondary_insights") or {}
+        career = {
+            "roles": [c.get("title") for c in careers_detailed if c.get("title")],
+            "user_level": user_career_level,
+            "by_level": {
+                level: [c.get("title") for c in items if c.get("title")]
+                for level, items in careers_by_level.items()
+            },
+        }
+
+        result = {
             "domain": domain,
             "roadmap": roadmap,
             "career_paths": career,
-            "skills_gap": self._roadmap_skill_gap(domain, signals),
+            "careers_detailed": careers_detailed,
+            "careers_by_level": careers_by_level,
+            "user_career_level": user_career_level,
+            "pakistani_jobs": openai_bundle.get("pakistani_jobs") or [],
+            "resume_outline": resume_outline,
+            "secondary_insights": secondary_insights,
+            "skills_gap": self._estimate_skill_gap(domain, signals),
+            "quiz_caliber": payload.get("quiz_caliber") or {},
+            "recommended_quiz_difficulty": openai_bundle.get("recommended_quiz_difficulty"),
+            "caliber_summary": openai_bundle.get("caliber_summary"),
+            "market_region": openai_bundle.get("market_region"),
+            "salary_currency": openai_bundle.get("salary_currency"),
+            "cached": False,
+            "metadata": {
+                "source": openai_bundle.get("source") or "openai+ml",
+                "generator": (
+                    "offline_learning_templates"
+                    if openai_bundle.get("source") == "offline_template"
+                    else "openai_path_generator"
+                ),
+                **market_metadata(),
+            },
         }
+
+        if user_id:
+            save_learning_path(user_id, domain, result, invalidation_key=invalidation_key)
+
+        return result
 
     def get_user_profile(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         result = self.analyze_user(payload)
@@ -583,23 +994,23 @@ class AdvancedLearningPathEngine:
         return top
 
     def _insight_for_domain(self, domain: str, signals: Dict[str, Any], confidence_lookup: Dict[str, Any]) -> LearningInsight:
-        career = self._career_payload(domain)
-        why = self._explain_domain_match(domain, signals)
-        skills_gap = self._estimate_skill_gap(domain, signals)
-        roadmap = self.DOMAIN_ROADMAPS.get(domain, {})
-        fastest_path = f"Start with {', '.join(roadmap.get('Beginner', ['foundations'])[:3])}."
+        d_key = self._canonical_domain(domain)
+        why = self._explain_domain_match(d_key, signals)
+        skills_gap = self._estimate_skill_gap(d_key, signals)
+        conf_lookup = confidence_lookup if isinstance(confidence_lookup, dict) else {}
+        conf_val = float(conf_lookup.get(d_key, conf_lookup.get(domain, 0.0)))
         return LearningInsight(
-            domain=domain,
-            match_score=float(confidence_lookup.get(domain, 0.0) if isinstance(confidence_lookup, dict) else 0.0),
-            match_percent=float(confidence_lookup.get(domain, 0.0) if isinstance(confidence_lookup, dict) else 0.0),
+            domain=d_key,
+            match_score=conf_val,
+            match_percent=conf_val,
             why_matched=why,
             skills_gap=skills_gap,
-            fastest_path=fastest_path,
-            best_courses=self._best_courses(domain),
-            best_projects=self._best_projects(domain),
-            best_certifications=career["certifications"],
-            community_resources=self._community_resources(domain),
-            career_paths=career,
+            fastest_path=f"Open Learning Path to load a live {d_key} roadmap from the API.",
+            best_courses=[],
+            best_projects=[],
+            best_certifications=[],
+            community_resources=[],
+            career_paths={"roles": []},
         )
 
     def _explain_domain_match(self, domain: str, signals: Dict[str, Any]) -> List[str]:
@@ -612,8 +1023,6 @@ class AdvancedLearningPathEngine:
             reasons.append("existing skills align well")
         if signals["goals"].get(domain, 0) >= 1:
             reasons.append("goals indicate this direction")
-        if signals["behavioral"].get(domain, 0) >= 1:
-            reasons.append("behavioral engagement supports it")
         return reasons or ["balanced multi-signal alignment"]
 
     def _estimate_skill_gap(self, domain: str, signals: Dict[str, Any]) -> List[str]:
@@ -639,23 +1048,6 @@ class AdvancedLearningPathEngine:
             }
             for item in top_domains
         }
-
-    def _build_projects(self, top_domains: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        projects = []
-        for item in top_domains:
-            for project in self._best_projects(item["domain"]):
-                projects.append({"domain": item["domain"], "project": project, "difficulty": "progressive"})
-        return projects[:9]
-
-    def _build_certifications(self, top_domains: List[Dict[str, Any]]) -> List[str]:
-        certs = []
-        for item in top_domains:
-            certs.extend(self.CAREER_DATA[item["domain"]]["certifications"])
-        seen = []
-        for cert in certs:
-            if cert not in seen:
-                seen.append(cert)
-        return seen[:10]
 
     def _build_gamification(self, signals: Dict[str, Any], top_domains: List[Dict[str, Any]]) -> Dict[str, Any]:
         score = top_domains[0]["score"] if top_domains else 0.0
@@ -695,127 +1087,144 @@ class AdvancedLearningPathEngine:
         }
         return paths
 
-    def _career_payload(self, domain: str) -> Dict[str, Any]:
-        data = self.CAREER_DATA.get(domain, self.CAREER_DATA["Coding"])
+    def _clamp01(self, value: float) -> float:
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _adaptive_metrics(self, domain: str, signals: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, float]:
+        explicit_raw = (signals.get("explicit") or {}).get(domain, 5.0)
+        interest_strength = self._clamp01(float(payload.get("interest_strength", explicit_raw / 10.0)))
+
+        mastery = payload.get("mastery_level")
+        if mastery is None:
+            mastery = payload.get("quiz_accuracy")
+        if mastery is None:
+            topic_perf = (signals.get("behavioral") or {}).get(domain, 0.0) / 10.0
+            mastery = topic_perf
+        mastery_level = self._clamp01(mastery)
+
+        progression = payload.get("learning_progression_completeness")
+        if progression is None:
+            progression = payload.get("progression_completeness")
+        if progression is None:
+            completed = float(payload.get("completed_topics", 0) or 0)
+            total = float(payload.get("total_topics", 0) or 0)
+            progression = (completed / total) if total > 0 else 0.0
+        progression_completeness = self._clamp01(progression)
+
+        engagement = payload.get("engagement_score")
+        if engagement is None:
+            engagement = (signals.get("behavioral") or {}).get(domain, 0.0) / 10.0
+        engagement_score = self._clamp01(engagement)
+
+        dropout = payload.get("dropout_risk")
+        if dropout is None:
+            dropout = max(0.0, 1.0 - engagement_score)
+        dropout_risk = self._clamp01(dropout)
+
         return {
-            "roles": data["roles"],
-            "freelancing": data["freelancing"],
-            "remote_jobs": data["remote"],
-            "startup_opportunities": data["startup"],
-            "required_tools": data["tools"],
-            "salary_range": data["salary_range"],
-            "market_demand": data["market_demand"],
-            "future_growth_score": data["future_growth"],
-            "certifications": data["certifications"],
+            "interest_strength": round(interest_strength, 4),
+            "mastery_level": round(mastery_level, 4),
+            "progression_completeness": round(progression_completeness, 4),
+            "engagement_score": round(engagement_score, 4),
+            "dropout_risk": round(dropout_risk, 4),
         }
 
-    def _best_courses(self, domain: str) -> List[str]:
-        return {
-            "Coding": ["CS50", "Python for Everybody", "Automate the Boring Stuff"],
-            "Web Development": ["The Odin Project", "MDN Web Docs", "Frontend Masters"],
-            "Game Development": ["Unity Learn", "Unreal Engine Courses", "GameDev.tv"],
-            "Cybersecurity": ["TryHackMe", "PortSwigger Academy", "HTB Academy"],
-            "Data Science": ["Kaggle Learn", "Google Data Analytics", "fast.ai"],
-            "Mobile Development": ["Flutter Docs", "Android Developer", "Stanford iOS"],
-            "Cloud Computing": ["AWS Skill Builder", "Kubernetes.io", "DevOps Roadmap"],
-            "AI & Machine Learning": ["DeepLearning.AI", "fast.ai", "Hugging Face Course"],
-            "Physical Games / Sports": ["Sports coaching basics", "Athletic performance", "Strength programming"],
-        }.get(domain, ["Structured online course", "project-based learning"])
+    def _determine_stage(self, metrics: Dict[str, float]) -> str:
+        mastery = metrics["mastery_level"]
+        progression = metrics["progression_completeness"]
+        engagement = metrics["engagement_score"]
+        dropout = metrics["dropout_risk"]
 
-    def _best_projects(self, domain: str) -> List[str]:
-        return {
-            "Coding": ["CLI task manager", "automation bot", "REST API service"],
-            "Web Development": ["portfolio site", "dashboard", "e-commerce storefront"],
-            "Game Development": ["2D platformer", "puzzle game", "game AI prototype"],
-            "Cybersecurity": ["home lab", "vulnerability scanner", "security playbook"],
-            "Data Science": ["EDA dashboard", "forecast model", "recommendation notebook"],
-            "Mobile Development": ["habit tracker", "weather app", "expense app"],
-            "Cloud Computing": ["CI/CD pipeline", "serverless app", "k8s deployment"],
-            "AI & Machine Learning": ["chatbot", "image classifier", "LLM app"],
-            "Physical Games / Sports": ["training plan app", "performance tracker", "coach dashboard"],
-        }.get(domain, ["small project", "portfolio project"])
+        if mastery >= 0.88 and progression >= 0.78 and engagement >= 0.7 and dropout <= 0.3:
+            return "expert"
+        if mastery >= 0.72 and progression >= 0.55 and engagement >= 0.6 and dropout <= 0.35:
+            return "advanced"
+        if mastery >= 0.48 and progression >= 0.28 and dropout <= 0.5:
+            return "intermediate"
+        return "basic"
 
-    def _community_resources(self, domain: str) -> List[str]:
+    def _next_step_strategy(self, metrics: Dict[str, float], stage: str) -> Dict[str, Any]:
+        mastery = metrics["mastery_level"]
+        engagement = metrics["engagement_score"]
+        dropout = metrics["dropout_risk"]
+
+        if dropout >= 0.6 or engagement <= 0.35:
+            return {
+                "mode": "simplified",
+                "path_modifier": "short",
+                "recommendation_type": "course",
+                "reason": "Engagement dropped or dropout risk increased; reducing complexity and shortening next path.",
+            }
+        if mastery >= 0.78 and engagement >= 0.68:
+            return {
+                "mode": "challenge",
+                "path_modifier": "project_first",
+                "recommendation_type": "project",
+                "reason": "Mastery and engagement are high; recommending project-based next step.",
+            }
+        if stage == "basic":
+            return {
+                "mode": "foundation",
+                "path_modifier": "guided",
+                "recommendation_type": "course",
+                "reason": "Prerequisites are still building; guided foundational learning is prioritized.",
+            }
         return {
-            "Coding": ["GitHub", "Stack Overflow", "freeCodeCamp"],
-            "Web Development": ["DEV Community", "MDN", "Frontend Mentor"],
-            "Game Development": ["r/gamedev", "Unity Discord", "Unreal forums"],
-            "Cybersecurity": ["OWASP", "TryHackMe Discord", "Hack The Box"],
-            "Data Science": ["Kaggle", "DataTalks.Club", "Towards Data Science"],
-            "Mobile Development": ["Flutter Community", "Android Developers", "Apple Dev Forums"],
-            "Cloud Computing": ["AWS Community", "Kubernetes Slack", "DevOps Subreddit"],
-            "AI & Machine Learning": ["Hugging Face", "MLOps Community", "Papers with Code"],
-            "Physical Games / Sports": ["local clubs", "sports federation", "coach communities"],
-        }.get(domain, ["Discord communities", "LinkedIn groups", "YouTube creators"])
+            "mode": "balanced",
+            "path_modifier": "mixed",
+            "recommendation_type": "course_then_project",
+            "reason": "Progression is healthy; continue with mixed course + practice cadence.",
+        }
+
+    def _adaptive_topic_sequence(
+        self,
+        basic: List[str],
+        intermediate: List[str],
+        advanced: List[str],
+        expert: List[str],
+        stage: str,
+        strategy: Dict[str, Any],
+    ) -> Dict[str, List[str]]:
+        if stage == "basic":
+            b, i, a, e = basic[:3], intermediate[:1], advanced[:1], expert[:0]
+        elif stage == "intermediate":
+            b, i, a, e = basic[:2], intermediate[:3], advanced[:1], expert[:1]
+        elif stage == "advanced":
+            b, i, a, e = basic[:1], intermediate[:2], advanced[:3], expert[:1]
+        else:
+            b, i, a, e = basic[:1], intermediate[:1], advanced[:2], expert[:3]
+
+        if strategy.get("path_modifier") == "short":
+            b, i, a, e = b[:2], i[:2], a[:1], e[:1]
+
+        return {
+            "basic": b or basic[:2],
+            "intermediate": i or intermediate[:2],
+            "advanced": a or advanced[:2],
+            "expert": e or expert[:2],
+        }
+
+    def _secondary_domain_snapshots(
+        self, primary: str, secondary: List[str], signals: Dict[str, Any]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Secondary domain packs come from OpenAI via generate_roadmap — no static catalogs."""
+        return {}
 
     def build_roadmap(self, domain: str, signals: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
-        base = self.DOMAIN_ROADMAPS.get(domain, self.DOMAIN_ROADMAPS["Coding"])
-        weekly_hours = float(
-            (payload.get("user") or {}).get("weekly_availability_hours")
-            or payload.get("weekly_availability_hours")
-            or 6
-        )
-        weekly_hours = max(1.0, min(40.0, weekly_hours))
-
-        # Build tiered roadmaps
-        beginner = base.get("Beginner", ["foundations", "practice", "first project"])
-        intermediate = base.get("Intermediate", ["core concepts", "projects", "review"])
-        advanced = base.get("Advanced", ["architecture", "optimization", "deployment"])
-
-        # Suggested projects & resources are already curated in helper methods
-        projects = self._best_projects(domain)
-        resources = {
-            "courses": self._best_courses(domain),
-            "community": self._community_resources(domain),
-        }
-        career = self._career_payload(domain)
-        skill_gaps = self._estimate_skill_gap(domain, signals)
-
-        # Simple pacing model
-        sessions_per_week = max(2, int(round(weekly_hours / 2.5)))
-        session_minutes = int(round((weekly_hours * 60) / sessions_per_week))
-        weekly_plan = {
-            "hours_per_week": weekly_hours,
-            "sessions_per_week": sessions_per_week,
-            "minutes_per_session": max(30, min(120, session_minutes)),
-            "cadence": "project-first" if (signals.get("learning_style") or {}).get(domain, 0) > 0.5 else "mixed",
-        }
-
-        # Build timeboxed plans
-        plan_30 = [{"week": w + 1, "focus": beginner[min(w, len(beginner) - 1)], "deliverable": projects[min(w, len(projects) - 1)]} for w in range(4)]
-        plan_90 = [{"week": w + 1, "focus": intermediate[min(w // 2, len(intermediate) - 1)], "deliverable": projects[min(w // 3, len(projects) - 1)]} for w in range(12)]
-        plan_365 = [
-            {"month": 1, "focus": "Foundations + first portfolio piece"},
-            {"month": 2, "focus": "Core concepts + repeat practice loops"},
-            {"month": 3, "focus": "Intermediate projects + testing habits"},
-            {"month": 4, "focus": "Deployment + performance + collaboration"},
-            {"month": 5, "focus": "Advanced topics + specialization"},
-            {"month": 6, "focus": "Capstone build + interview prep"},
-            {"month": 9, "focus": "Real-world delivery + open-source / freelancing"},
-            {"month": 12, "focus": "Career-ready mastery + certifications"},
-        ]
-
-        return {
-            "beginner": {"topics": beginner, "duration_days": 30, "milestones": ["first project shipped", "baseline quiz passed", "habit formed"]},
-            "intermediate": {"topics": intermediate, "duration_days": 90, "milestones": ["3 projects", "debugging fluency", "job-ready patterns"]},
-            "advanced": {"topics": advanced, "duration_days": 365, "milestones": ["capstone", "performance + architecture", "portfolio + interview readiness"]},
-            "plans": {
-                "30_day": plan_30,
-                "90_day": plan_90,
-                "1_year": plan_365,
-            },
-            "weekly_study_plan": weekly_plan,
-            "suggested_projects": projects,
-            "certifications": career.get("certifications", []),
-            "resources": resources,
-            "career_paths": career.get("roles", []),
-            "skill_gaps": skill_gaps,
-        }
+        """Backward-compatible entry that always uses the dynamic OpenAI + ML pipeline."""
+        payload = self._enrich_payload_with_quiz_caliber(payload)
+        openai_bundle = self._fetch_openai_learning_bundle(domain, signals, payload)
+        return self._build_roadmap_from_openai(domain, signals, payload, openai_bundle)
 
     def build_career_intelligence(self, top_domains: List[Dict[str, Any]]) -> Dict[str, Any]:
-        out = {}
+        out: Dict[str, Any] = {}
         for item in top_domains:
-            out[item["domain"]] = self._career_payload(item["domain"])
+            career = item.get("career_paths")
+            if career:
+                out[item["domain"]] = career
         return out
 
 

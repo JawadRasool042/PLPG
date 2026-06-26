@@ -9,11 +9,6 @@ const ProtectedAdminRoute: React.FC = () => {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    // Allow hardcoded local admin without token
-    if (isAuthenticated && admin?.email === 'admin@local') {
-      setChecked(true);
-      return;
-    }
     const token = getAdminAccessToken();
     if (token && !isAuthenticated) {
       fetchProfile().finally(() => setChecked(true));
