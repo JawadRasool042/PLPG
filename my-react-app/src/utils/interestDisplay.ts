@@ -136,6 +136,25 @@ export function getInterestAssessmentDisplay(interests: UserInterests | null): I
   };
 }
 
+/** Emoji per interest domain (shared across Home, assessment, learning path). */
+export const INTEREST_DOMAIN_ICONS: Record<string, string> = {
+  Coding: '💻',
+  'Web Development': '🌐',
+  'Game Development': '🎮',
+  Cybersecurity: '🔐',
+  'Data Science': '📊',
+  'Mobile Development': '📱',
+  'Cloud Computing': '☁️',
+  'AI & Machine Learning': '🤖',
+  'Physical Games / Sports': '⚽',
+};
+
+export function getInterestDomainIcon(domain: string): string {
+  const normalized = (domain || '').trim().toLowerCase();
+  const match = Object.keys(INTEREST_DOMAIN_ICONS).find((k) => k.toLowerCase() === normalized);
+  return match ? INTEREST_DOMAIN_ICONS[match] : '📌';
+}
+
 /** Canonical backend `DOMAINS` keys — `/generate-roadmap` expects these in `scores`. */
 export const ROADMAP_DOMAIN_KEYS = [
   'Coding',

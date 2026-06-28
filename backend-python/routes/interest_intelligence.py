@@ -51,6 +51,7 @@ def _build_assessment_payload(
     result,
     primary_override: str | None = None,
     domain_scores: dict | None = None,
+    user_context: dict | None = None,
 ) -> dict:
     """Convert an analysis result + optional override into the User.interestAssessment shape."""
     primary = primary_override or result.primary_interest
@@ -75,7 +76,7 @@ def _build_assessment_payload(
         all_interests.insert(0, {'domain': primary, 'confidence': primary_confidence})
 
     now = datetime.utcnow()
-    return {
+    payload: dict = {
         'completed': True,
         'primaryInterest': primary,
         'confidence': round(max(0.0, min(1.0, primary_confidence)), 4),
@@ -86,14 +87,34 @@ def _build_assessment_payload(
         'lastUpdated': now,
     }
 
+    if user_context and isinstance(user_context, dict):
+        known = user_context.get('known')
+        want = user_context.get('want')
+        goals = user_context.get('goals') or user_context.get('learning_goals')
+        if known or want or goals:
+            payload['assessmentContext'] = {
+                'known': str(known or ''),
+                'want': str(want or ''),
+                'goals': str(goals or ''),
+            }
+        tags = user_context.get('assessment_tags')
+        if isinstance(tags, list):
+            cleaned_tags = [str(t).strip() for t in tags if str(t).strip()]
+            if cleaned_tags:
+                payload['assessmentTags'] = cleaned_tags
+
+    return payload
+
 
 def _persist_assessment(user_id: str, payload: dict, primary: str) -> None:
     """Update User.interestAssessment + focusDomains in Mongo."""
     try:
-        User.update(user_id, {
+        ok = User.update(user_id, {
             'interestAssessment': payload,
             'focusDomains': [primary] if primary else [],
         })
+        if not ok:
+            logger.error("interestAssessment update matched no user document for user %s", user_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to persist interestAssessment for user %s: %s", user_id, exc)
 
@@ -292,9 +313,20 @@ def analyze_interests():
         if user_id:
             if is_tie:
                 # Stash the analysis so /resolve-tie can use it later.
-                _cache_pending_tie(user_id, response_data)
+                _cache_pending_tie(
+                    user_id,
+                    {
+                        **response_data,
+                        'domain_scores': interests,
+                        'user_context': user_context if isinstance(user_context, dict) else {},
+                    },
+                )
             else:
-                payload = _build_assessment_payload(result, domain_scores=interests)
+                payload = _build_assessment_payload(
+                    result,
+                    domain_scores=interests,
+                    user_context=user_context if isinstance(user_context, dict) else None,
+                )
                 _persist_assessment(user_id, payload, result.primary_interest)
                 _clear_pending_tie(user_id)
                 response_data['persisted'] = True
@@ -394,15 +426,33 @@ def resolve_tie():
             all_interests.insert(0, {'domain': selected_interest, 'confidence': chosen_confidence})
 
         now = datetime.utcnow()
+        domain_scores = cached.get('domain_scores') or cached.get('interests') or {}
+        user_context = cached.get('user_context') if isinstance(cached.get('user_context'), dict) else None
         payload = {
             'completed': True,
             'primaryInterest': selected_interest,
             'confidence': chosen_confidence,
             'allInterests': all_interests,
+            'domainScores': domain_scores if isinstance(domain_scores, dict) else {},
             'tieResolved': True,
             'completedAt': now,
             'lastUpdated': now,
         }
+        if user_context:
+            known = user_context.get('known')
+            want = user_context.get('want')
+            goals = user_context.get('goals') or user_context.get('learning_goals')
+            if known or want or goals:
+                payload['assessmentContext'] = {
+                    'known': str(known or ''),
+                    'want': str(want or ''),
+                    'goals': str(goals or ''),
+                }
+            tags = user_context.get('assessment_tags')
+            if isinstance(tags, list):
+                cleaned = [str(t).strip() for t in tags if str(t).strip()]
+                if cleaned:
+                    payload['assessmentTags'] = cleaned
 
         _persist_assessment(user_id, payload, selected_interest)
         _clear_pending_tie(user_id)

@@ -565,10 +565,10 @@ const RecentQuizzes: React.FC = () => {
               ← Quiz hub
             </Link>
             <Link
-              to="/dashboard"
+              to="/home"
               className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
             >
-              Dashboard
+              Home
             </Link>
             <Link
               to="/feedback"

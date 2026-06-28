@@ -250,7 +250,19 @@ class InterestIntelligenceEngine:
 
         primary_interest = ranked_interests[0]["name"] if ranked_interests else self.domains[0]
 
-        tie_detected = self._detect_tie(ranked_interests)
+        tie_detected = self._detect_tie(ranked_interests, scores)
+        if not tie_detected.is_tie:
+            rated_explicit = sorted(
+                [
+                    (domain, float(scores.get(domain, 0) or 0))
+                    for domain in self.domains
+                    if float(scores.get(domain, 0) or 0) > 0
+                ],
+                key=lambda item: item[1],
+                reverse=True,
+            )
+            if rated_explicit:
+                primary_interest = rated_explicit[0][0]
         anomaly_detection = self._detect_anomalies(list(scores.values()))
         trends = self._compute_trends(historical_data)
 
@@ -483,21 +495,38 @@ class InterestIntelligenceEngine:
 
         return ", ".join(dict.fromkeys(reasons)) or "balanced multi-signal alignment"
 
-    def _detect_tie(self, ranked_interests: List[Dict[str, Any]]) -> TieDetection:
-        if len(ranked_interests) < 2:
+    def _detect_tie(
+        self,
+        ranked_interests: List[Dict[str, Any]],
+        scores: Dict[str, float],
+    ) -> TieDetection:
+        rated = [
+            (domain, float(scores.get(domain, 0) or 0))
+            for domain in self.domains
+            if float(scores.get(domain, 0) or 0) > 0
+        ]
+        if len(rated) < 2:
             return TieDetection(False, [], 0.0, "", [])
 
-        top = float(ranked_interests[0]["score"])
-        second = float(ranked_interests[1]["score"])
-        diff = abs(top - second)
-        # Production-style tie threshold: combine absolute and relative margin.
-        relative_gap = diff / max(top, 1.0)
-        is_tie = diff <= 3.0 or relative_gap <= 0.05
-        tie_confidence = round(max(0.0, 1.0 - min(1.0, relative_gap * 4.0)), 2)
-        candidates = [ranked_interests[0]["name"], ranked_interests[1]["name"]]
-        question = "Which of these domains excites you more to practice every week?"
+        rated.sort(key=lambda item: item[1], reverse=True)
+        top_score = rated[0][1]
+        second_score = rated[1][1]
+        explicit_diff = abs(top_score - second_score)
+
+        # Only prompt when the user gave the same top rating (e.g. 10 and 10).
+        # A 10 vs 9 split is a clear preference — no tie-breaker needed.
+        is_tie = explicit_diff < 0.5
+        if not is_tie:
+            return TieDetection(False, [], 0.0, "", [])
+
+        candidates = [domain for domain, value in rated if abs(value - top_score) < 0.5][:3]
+        if len(candidates) < 2:
+            return TieDetection(False, [], 0.0, "", [])
+
+        tie_confidence = 0.9
+        question = "You rated these domains the same. Which one do you want as your main focus?"
         differentiators = ["project building", "problem solving", "career alignment", "community engagement"]
-        return TieDetection(is_tie, candidates if is_tie else [], tie_confidence, question, differentiators)
+        return TieDetection(True, candidates, tie_confidence, question, differentiators)
 
     def _detect_anomalies(self, values: List[float]) -> AnomalyDetection:
         if not values:
@@ -758,11 +787,8 @@ class InterestIntelligenceEngine:
             if not any((sr.get("topics") or []) for sr in skill_roadmap):
                 skill_roadmap = offline["skill_roadmap"]
 
-        justification = f"Hybrid intelligence signals indicate {primary_interest} as the most aligned domain for your goals and strengths."
-        learning_next_step = (
-            f"Start with the {primary_interest} beginner roadmap and complete your first milestone "
-            "within your personalized stage timeline."
-        )
+        justification = f"Based on your ratings, {primary_interest} is your top pick."
+        learning_next_step = f"Take a quiz in {primary_interest} to unlock your learning path."
 
         return RecommendationPayload(
             career_paths=career_paths,

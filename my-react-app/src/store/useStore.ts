@@ -1,9 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { registerUser, loginUser, logoutUser, getCurrentUserData, type RegisterResult } from '../services/authService';
-import { API_BASE_URL } from '../config/apiBase';
-
-const ACCESS_TOKEN_KEY = 'plpg_access_token';
+import { registerUser, loginUser, logoutUser, getCurrentUserData, type RegisterResult, type InterestAssessmentMe } from '../services/authService';
 
 export interface User {
   id: string;
@@ -130,6 +127,50 @@ interface AppState {
   updateProgress: () => void;
 }
 
+const mapAssessmentToStore = (
+  assessment: InterestAssessmentMe | null | undefined,
+): Pick<AppState, 'hasCompletedOnboarding' | 'userInterests'> => {
+  if (!assessment?.completed) {
+    return { hasCompletedOnboarding: false, userInterests: null };
+  }
+
+  const rawScores = assessment.domainScores ?? {};
+  const domainScores =
+    rawScores && typeof rawScores === 'object'
+      ? Object.fromEntries(
+          Object.entries(rawScores).map(([k, v]) => [k, typeof v === 'number' ? v : Number(v)]),
+        )
+      : undefined;
+
+  const atags = assessment.assessmentTags;
+  const assessmentTags = Array.isArray(atags)
+    ? atags.map((t) => String(t).trim()).filter(Boolean)
+    : undefined;
+
+  const actx = assessment.assessmentContext;
+  const assessmentContext =
+    actx && typeof actx === 'object'
+      ? {
+          known: actx.known != null ? String(actx.known) : undefined,
+          want: actx.want != null ? String(actx.want) : undefined,
+          goals: actx.goals != null ? String(actx.goals) : undefined,
+        }
+      : undefined;
+
+  return {
+    hasCompletedOnboarding: true,
+    userInterests: {
+      primaryInterest: assessment.primaryInterest ?? '',
+      confidence: Number(assessment.confidence ?? 0),
+      allInterests: assessment.allInterests ?? [],
+      ...(domainScores && Object.keys(domainScores).length > 0 ? { domainScores } : {}),
+      completedAt: assessment.completedAt ?? new Date().toISOString(),
+      ...(assessmentContext ? { assessmentContext } : {}),
+      ...(assessmentTags?.length ? { assessmentTags } : {}),
+    },
+  };
+};
+
 const defaultLearningGoals: LearningGoal[] = [
   { id: '1', title: 'Web Development', description: 'Learn HTML, CSS, JavaScript, and modern frameworks', category: 'Programming', selected: false },
   { id: '2', title: 'Data Science', description: 'Master Python, statistics, and machine learning', category: 'Data', selected: false },
@@ -188,6 +229,7 @@ export const useStore = create<AppState>()(
               role: userData.role,
             },
             isAuthenticated: true,
+            ...mapAssessmentToStore(userData.interestAssessment),
           });
           return true;
         } catch (error: any) {
@@ -235,7 +277,6 @@ export const useStore = create<AppState>()(
       },
 
       initializeAuth: async () => {
-        // Check for current user on app initialization
         try {
           const userData = await getCurrentUserData();
           if (userData) {
@@ -248,70 +289,14 @@ export const useStore = create<AppState>()(
                 role: userData.role,
               },
               isAuthenticated: true,
+              ...mapAssessmentToStore(userData.interestAssessment),
             });
-
-            // Fetch user's interests if they exist
-            try {
-              const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-              const response = await fetch(`${API_BASE_URL}/auth/me`, {
-                headers: {
-                  ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                }
-              });
-              if (response.ok) {
-                const meData = await response.json();
-                const assessment = meData?.interestAssessment;
-                if (assessment?.completed) {
-                  const rawScores =
-                    assessment.domainScores ?? assessment.domain_scores ?? {};
-                  const domainScores =
-                    rawScores && typeof rawScores === 'object'
-                      ? Object.fromEntries(
-                          Object.entries(rawScores).map(([k, v]) => [
-                            k,
-                            typeof v === 'number' ? v : Number(v),
-                          ]),
-                        )
-                      : undefined;
-                  const atags = assessment.assessmentTags;
-                  const assessmentTags = Array.isArray(atags)
-                    ? atags.map((t: unknown) => String(t).trim()).filter(Boolean)
-                    : undefined;
-                  const actx = assessment.assessmentContext;
-                  const assessmentContext =
-                    actx && typeof actx === 'object'
-                      ? {
-                          known: actx.known != null ? String(actx.known) : undefined,
-                          want: actx.want != null ? String(actx.want) : undefined,
-                          goals: actx.goals != null ? String(actx.goals) : undefined,
-                        }
-                      : undefined;
-                  set({
-                    hasCompletedOnboarding: true,
-                    userInterests: {
-                      primaryInterest: assessment.primaryInterest,
-                      confidence: assessment.confidence,
-                      allInterests: assessment.allInterests,
-                      ...(domainScores && Object.keys(domainScores).length > 0
-                        ? { domainScores }
-                        : {}),
-                      completedAt: assessment.completedAt,
-                      ...(assessmentContext ? { assessmentContext } : {}),
-                      ...(assessmentTags?.length ? { assessmentTags } : {}),
-                    },
-                  });
-                }
-              }
-            } catch (interestError) {
-              console.warn('Could not load user interests:', interestError);
-              // Not a critical error, user can complete interest assessment later
-            }
           } else {
-            set({ user: null, isAuthenticated: false });
+            set({ user: null, isAuthenticated: false, hasCompletedOnboarding: false, userInterests: null });
           }
         } catch (error) {
           console.error('Error initializing auth:', error);
-          set({ user: null, isAuthenticated: false });
+          set({ user: null, isAuthenticated: false, hasCompletedOnboarding: false, userInterests: null });
         }
       },
 
@@ -462,8 +447,6 @@ export const useStore = create<AppState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
-        hasCompletedOnboarding: state.hasCompletedOnboarding,
-        userInterests: state.userInterests,
         theme: state.theme,
         learningGoals: state.learningGoals,
         selectedGoals: state.selectedGoals,

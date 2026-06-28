@@ -45,6 +45,10 @@ import AdminLayout from './components/Admin/AdminLayout';
 import ProtectedAdminRoute from './components/Admin/ProtectedAdminRoute';
 import ProtectedInterestRoute from './components/ProtectedInterestRoute';
 
+const CatchAllRedirect: React.FC = () => {
+  const { isAuthenticated } = useStore();
+  return <Navigate to={isAuthenticated ? '/home' : '/'} replace />;
+};
 
 const App: React.FC = () => {
   const { initializeAuth, theme, setTheme } = useStore();
@@ -90,7 +94,8 @@ const App: React.FC = () => {
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/dashboard" element={<UserDashboard />} />
+          <Route path="/home" element={<UserDashboard />} />
+          <Route path="/dashboard" element={<Navigate to="/home" replace />} />
           <Route path="/quizzes" element={<Quizzes />} />
           <Route path="/quizzes/recent" element={<RecentQuizzes />} />
           <Route path="/ai-quiz" element={<AIQuiz />} />
@@ -132,7 +137,7 @@ const App: React.FC = () => {
         </Route>
 
         {/* Catch-all redirect */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<CatchAllRedirect />} />
       </Routes>
     </Router>
   );

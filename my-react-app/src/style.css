@@ -442,7 +442,7 @@ a {
   }
 
   .nav-pill-track--app {
-    @apply max-w-[min(100vw-12rem, 52rem)];
+    @apply max-w-[min(100vw-12rem,34rem)];
   }
 
   .nav-pill-link {
@@ -470,7 +470,7 @@ a {
     @apply relative z-[1] hidden whitespace-nowrap sm:inline;
   }
 
-  @media (min-width: 1280px) {
+  @media (min-width: 768px) {
     .nav-pill-track--app .nav-pill-label {
       @apply inline;
     }
@@ -488,6 +488,22 @@ a {
 
   .nav-pill-link--active .nav-pill-icon {
     @apply text-primary;
+  }
+
+  .nav-pill-attention {
+    @apply absolute -right-1 -top-1 h-2 w-2 rounded-full bg-primary ring-2 ring-background;
+  }
+
+  .nav-pill-lock {
+    @apply relative z-[1] h-3.5 w-3.5 shrink-0 opacity-70;
+  }
+
+  .nav-pill-chevron {
+    @apply h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200;
+  }
+
+  .nav-more-badge {
+    @apply rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary;
   }
 
   .nav-actions {
@@ -546,8 +562,36 @@ a {
     @apply w-[min(100vw-2rem, 16rem)] sm:w-64;
   }
 
+  .nav-dropdown--more {
+    @apply w-[min(100vw-2rem,14rem)] sm:w-52;
+  }
+
+  .nav-dropdown--group {
+    @apply left-0 top-[calc(100%+6px)] w-[min(100vw-2rem,17rem)] sm:w-72;
+  }
+
+  .nav-dropdown-section-label {
+    @apply px-4 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+
   .nav-dropdown-heading {
     @apply border-b border-border/80 px-4 py-3 text-sm font-semibold text-foreground;
+  }
+
+  .nav-dropdown-heading-row {
+    @apply flex items-center justify-between gap-2 border-b border-border/80 px-4 py-3;
+  }
+
+  .nav-dropdown-heading-row .nav-dropdown-heading {
+    @apply border-0 p-0;
+  }
+
+  .nav-notif-mark-all {
+    @apply shrink-0 text-xs font-medium text-primary hover:text-primary/80 transition-colors;
+  }
+
+  .nav-notif-item--read {
+    @apply opacity-60;
   }
 
   .nav-dropdown-user {
@@ -570,6 +614,10 @@ a {
     @apply bg-primary/10 text-primary;
   }
 
+  .nav-menu-item--rich {
+    @apply items-start gap-3 py-2.5;
+  }
+
   .nav-menu-item--danger {
     @apply text-destructive hover:bg-destructive/10;
   }
@@ -583,11 +631,11 @@ a {
   }
 
   .nav-drawer-backdrop {
-    @apply fixed inset-0 top-14 z-40 bg-black/25 backdrop-blur-[2px] lg:hidden;
+    @apply fixed inset-0 top-14 z-40 bg-black/25 backdrop-blur-[2px] md:hidden;
   }
 
   .nav-drawer {
-    @apply fixed bottom-0 right-0 top-14 z-50 w-[min(100vw-3rem, 20rem)] overflow-y-auto border-l border-border/80 bg-background/95 p-4 shadow-xl backdrop-blur-md lg:hidden;
+    @apply fixed bottom-0 right-0 top-14 z-50 w-[min(100vw-3rem,20rem)] overflow-y-auto border-l border-border/80 bg-background/95 p-4 shadow-xl backdrop-blur-md md:hidden;
   }
 
   .nav-drawer-label {
@@ -600,6 +648,10 @@ a {
 
   .nav-drawer-link--icon {
     @apply gap-3;
+  }
+
+  .nav-drawer-link--rich {
+    @apply items-start gap-3 py-3;
   }
 
   .nav-drawer-link--active {

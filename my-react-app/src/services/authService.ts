@@ -3,6 +3,21 @@ import { API_BASE_URL } from '../config/apiBase';
 const USER_ACCESS_TOKEN_KEY = 'plpg_access_token';
 const USER_REFRESH_TOKEN_KEY = 'plpg_refresh_token';
 
+export interface InterestAssessmentMe {
+  completed?: boolean;
+  primaryInterest?: string;
+  confidence?: number;
+  allInterests?: Array<{ domain: string; confidence: number }>;
+  domainScores?: Record<string, number>;
+  completedAt?: string;
+  assessmentContext?: {
+    known?: string;
+    want?: string;
+    goals?: string;
+  };
+  assessmentTags?: string[];
+}
+
 export interface UserData {
   id: string;
   email: string;
@@ -11,10 +26,22 @@ export interface UserData {
   role: string;
   isActive: boolean;
   createdAt: Date;
+  interestAssessment?: InterestAssessmentMe | null;
 }
 
 /** Return type for successful registration (same shape as logged-in user payload). */
 export type RegisterResult = UserData;
+
+const mapAuthMeToUserData = (user: Record<string, unknown>): UserData => ({
+  id: String(user.id),
+  email: String(user.email),
+  firstName: String(user.first_name ?? ''),
+  lastName: String(user.last_name ?? ''),
+  role: String(user.role ?? 'Student'),
+  isActive: Boolean(user.is_active),
+  createdAt: new Date(String(user.created_at ?? Date.now())),
+  interestAssessment: (user.interestAssessment as InterestAssessmentMe | null | undefined) ?? null,
+});
 
 // Helper to get token expiry from JWT (without verification)
 const getTokenExpiry = (token: string): number | null => {
@@ -167,15 +194,7 @@ export const registerUser = async (
   }
 
   const user = await response.json();
-  return {
-    id: user.id.toString(),
-    email: user.email,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    role: user.role,
-    isActive: user.is_active,
-    createdAt: new Date(user.created_at),
-  };
+  return mapAuthMeToUserData(user as Record<string, unknown>);
 };
 
 // Login user
@@ -214,15 +233,7 @@ export const loginUser = async (email: string, password: string): Promise<UserDa
   }
 
   const user = await userResponse.json();
-  return {
-    id: user.id.toString(),
-    email: user.email,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    role: user.role,
-    isActive: user.is_active,
-    createdAt: new Date(user.created_at),
-  };
+  return mapAuthMeToUserData(user as Record<string, unknown>);
 };
 
 // Logout user
@@ -260,15 +271,7 @@ export const getCurrentUserData = async (): Promise<UserData | null> => {
     }
 
     const user = await response.json();
-    return {
-      id: user.id.toString(),
-      email: user.email,
-      firstName: user.first_name,
-      lastName: user.last_name,
-      role: user.role,
-      isActive: user.is_active,
-      createdAt: new Date(user.created_at),
-    };
+    return mapAuthMeToUserData(user as Record<string, unknown>);
   } catch (error) {
     localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
     localStorage.removeItem(USER_REFRESH_TOKEN_KEY);

@@ -99,13 +99,13 @@ const Feedback: React.FC = () => {
             </button>
             <button
               onClick={() => {
-                if (window.confirm('Do you really want to go to dashboard')) {
-                  navigate('/dashboard');
+                if (window.confirm('Go back to Home?')) {
+                  navigate('/home');
                 }
               }}
               className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors"
             >
-              Back to Dashboard
+              Back to Home
             </button>
           </div>
         </div>
@@ -210,8 +210,8 @@ const Feedback: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm('Do you really want to go to dashboard')) {
-                    navigate('/dashboard');
+                  if (window.confirm('Go back to Home?')) {
+                    navigate('/home');
                   }
                 }}
                 className="flex-1 px-6 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"

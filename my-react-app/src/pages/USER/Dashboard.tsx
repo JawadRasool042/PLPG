@@ -9,6 +9,7 @@ import {
   buildRoadmapScoresPayload,
   getEffectivePrimaryInterest,
   getInterestAssessmentDisplay,
+  getInterestDomainIcon,
   getPercentage,
   ratedDomainsFromScores,
 } from '../../utils/interestDisplay';
@@ -69,7 +70,7 @@ type WeeklyProgressModel = {
   buckets: WeeklyBucket[];
   lineSegments: { x: number; y: number; score: number }[][];
   trendDelta: number | null;
-  trendLabel: 'improving' | 'declining' | 'steady';
+  trendLabel: 'improving' | 'declining' | 'steady' | 'insufficient';
   weekStreak: number;
   thisWeekAverage: number | null;
   improvementDisplay: string;
@@ -126,10 +127,11 @@ function buildWeeklyProgress(attempts: QuizAttempt[], numWeeks: number): WeeklyP
     trendDelta = (buckets[last].average ?? 0) - (buckets[first].average ?? 0);
   }
 
-  let trendLabel: WeeklyProgressModel['trendLabel'] = 'steady';
-  if (trendDelta != null) {
+  let trendLabel: WeeklyProgressModel['trendLabel'] = 'insufficient';
+  if (nonNullIdx.length >= 2 && trendDelta != null) {
     if (trendDelta > 2) trendLabel = 'improving';
     else if (trendDelta < -2) trendLabel = 'declining';
+    else trendLabel = 'steady';
   }
 
   let weekStreak = 0;
@@ -165,8 +167,15 @@ function LearningProgressCard({
   weeklyProgress: WeeklyProgressModel;
   chartUid: string;
 }) {
-  const { buckets, lineSegments, trendLabel, weekStreak, thisWeekAverage, improvementDisplay, totalAttemptsInWindow } =
-    weeklyProgress;
+  const {
+    buckets,
+    lineSegments,
+    trendLabel,
+    weekStreak,
+    thisWeekAverage,
+    improvementDisplay,
+    totalAttemptsInWindow,
+  } = weeklyProgress;
 
   const trendPill =
     trendLabel === 'improving'
@@ -177,44 +186,42 @@ function LearningProgressCard({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
           ),
         }
-      : trendLabel === 'declining'
+        : trendLabel === 'declining'
         ? {
-            text: 'Declining',
+            text: 'Needs focus',
             className: 'bg-rose-50 text-rose-700',
             icon: (
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
             ),
           }
-        : {
-            text: 'Steady',
-            className: 'bg-slate-100 text-slate-700',
-            icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />,
-          };
+        : null;
 
   const lineGradId = `lp-line-${chartUid}`;
   const areaGradId = `lp-area-${chartUid}`;
+  const hasChartData = totalAttemptsInWindow > 0;
+  const scoreChangeDisplay = hasChartData ? improvementDisplay : '—';
+  const activeWeeksDisplay = hasChartData ? String(weekStreak) : '—';
+  const thisWeekDisplay = hasChartData && thisWeekAverage != null ? `${thisWeekAverage}%` : '—';
 
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Learning Progress</h2>
-          <p className="text-slate-600">Your performance trend over time (live from quiz history)</p>
-        </div>
-        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${trendPill.className}`}>
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            {trendPill.icon}
-          </svg>
-          {trendPill.text}
-        </span>
+        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <span aria-hidden>📈</span>
+          Quiz scores
+        </h2>
+        {trendPill && hasChartData && (
+          <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium ${trendPill.className}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {trendPill.icon}
+            </svg>
+            {trendPill.text}
+          </span>
+        )}
       </div>
 
-      <div className="relative h-80 bg-gradient-to-br from-slate-50 to-indigo-50 rounded-xl p-4 sm:p-6 border border-slate-200 flex items-center justify-center">
-        {totalAttemptsInWindow === 0 && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/70 px-4 text-center text-sm text-slate-600">
-            No quiz attempts in the last {LEARNING_PROGRESS_WEEKS} weeks. Take a quiz to see your trend here.
-          </div>
-        )}
+      <div className="relative h-80 bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200 flex items-center justify-center">
+        {hasChartData ? (
         <svg
           className="w-full max-w-3xl h-72 sm:h-80"
           viewBox={`0 0 ${LP_CHART.viewW} ${LP_CHART.viewH}`}
@@ -316,6 +323,12 @@ function LearningProgressCard({
             );
           })}
         </svg>
+        ) : (
+          <p className="text-sm text-slate-500 text-center px-4 flex items-center justify-center gap-2">
+            <span aria-hidden>📝</span>
+            Take a quiz to see your weekly scores here.
+          </p>
+        )}
       </div>
 
       <div className="mt-8 grid md:grid-cols-3 gap-4">
@@ -333,12 +346,14 @@ function LearningProgressCard({
             <div className="min-w-0">
               <p
                 className={`text-2xl font-bold tabular-nums ${
-                  weeklyProgress.trendDelta != null && weeklyProgress.trendDelta < 0 ? 'text-rose-700' : 'text-slate-900'
+                  hasChartData && weeklyProgress.trendDelta != null && weeklyProgress.trendDelta < 0
+                    ? 'text-rose-700'
+                    : 'text-slate-900'
                 }`}
               >
-                {improvementDisplay}
+                {scoreChangeDisplay}
               </p>
-              <p className="text-xs text-slate-600">Improvement (first → last week with data)</p>
+              <p className="text-xs text-slate-600">Score change</p>
             </div>
           </div>
         </div>
@@ -351,8 +366,8 @@ function LearningProgressCard({
               </svg>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{weekStreak}</p>
-              <p className="text-xs text-slate-600">Week streak (this week → back)</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{activeWeeksDisplay}</p>
+              <p className="text-xs text-slate-600">Active weeks</p>
             </div>
           </div>
         </div>
@@ -370,10 +385,8 @@ function LearningProgressCard({
               </svg>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
-                {thisWeekAverage != null ? `${thisWeekAverage}%` : '—'}
-              </p>
-              <p className="text-xs text-slate-600">This calendar week (avg)</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{thisWeekDisplay}</p>
+              <p className="text-xs text-slate-600">This week</p>
             </div>
           </div>
         </div>
@@ -388,19 +401,7 @@ const Dashboard: React.FC = () => {
   const [performance, setPerformance] = useState<UserPerformance | null>(null);
   const [history, setHistory] = useState<QuizAttempt[]>([]);
   const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(null);
-  const [pathIntelError, setPathIntelError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dismissedMotivation, setDismissedMotivation] = useState(false);
-
-  // Motivational messages pool
-  const motivationalMessages = [
-    { emoji: '🚀', text: 'Keep going! Every quiz you complete brings you closer to mastery.', color: 'from-indigo-500 to-purple-600' },
-    { emoji: '🌟', text: "You're doing great! Consistency is the key to learning success.", color: 'from-emerald-500 to-teal-600' },
-    { emoji: '💡', text: 'New knowledge unlocked! Your brain is growing stronger every day.', color: 'from-amber-500 to-orange-600' },
-    { emoji: '🎯', text: "Stay focused! You're on the right path to achieving your goals.", color: 'from-rose-500 to-pink-600' },
-    { emoji: '🏆', text: 'Champions are made through daily practice. Keep it up!', color: 'from-blue-500 to-indigo-600' },
-  ];
-  const todayMsg = motivationalMessages[new Date().getDay() % motivationalMessages.length];
 
   const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
   const primaryInterest = useMemo(() => getEffectivePrimaryInterest(userInterests), [userInterests]);
@@ -411,18 +412,21 @@ const Dashboard: React.FC = () => {
 
   const topInterestRows = useMemo(() => {
     if (!userInterests) return [];
+    const primaryKey = (primaryInterest || '').trim().toLowerCase();
     const rated = ratedDomainsFromScores(userInterests.domainScores);
-    if (rated.length) {
-      return rated.slice(0, 3).map((r) => ({
-        domain: r.domain,
-        pct: getPercentage(r.score),
-      }));
-    }
-    return userInterests.allInterests.slice(0, 3).map((i) => ({
-      domain: i.domain,
-      pct: getPercentage(i.confidence * 10),
-    }));
-  }, [userInterests]);
+    const rows = rated.length
+      ? rated.map((r) => ({
+          domain: r.domain,
+          pct: getPercentage(r.score),
+        }))
+      : userInterests.allInterests.map((i) => ({
+          domain: i.domain,
+          pct: getPercentage(i.confidence * 10),
+        }));
+    return rows.filter(
+      (row) => row.pct > 0 && row.domain.trim().toLowerCase() !== primaryKey,
+    );
+  }, [userInterests, primaryInterest]);
 
   const domainScoresSignature = useMemo(
     () => JSON.stringify(userInterests?.domainScores ?? {}),
@@ -446,9 +450,7 @@ const Dashboard: React.FC = () => {
           setPathIntel(null);
         } else if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) {
           setPathIntel(null);
-          setPathIntelError(null);
         } else {
-        setPathIntelError(null);
         try {
           const secondary = (userInterests.allInterests || [])
             .map((i) => i.domain)
@@ -480,7 +482,7 @@ const Dashboard: React.FC = () => {
           setPathIntel(live);
         } catch (e: unknown) {
           setPathIntel(null);
-          setPathIntelError(e instanceof Error ? e.message : 'Could not load live path');
+          console.error('Could not load learning path preview:', e);
         }
         }
       }
@@ -512,18 +514,18 @@ const Dashboard: React.FC = () => {
     if (r) {
       const steps: string[] = [];
       const bTopics = r.basic?.all_topics?.length ? r.basic.all_topics : r.basic?.topics ?? r.beginner?.all_topics ?? r.beginner?.topics;
-      (bTopics || []).slice(0, 2).forEach((t) => steps.push(`Build: ${t}`));
+      (bTopics || []).slice(0, 2).forEach((t) => steps.push(t));
       const ns = r.next_step?.title;
-      if (ns) steps.push(`Next: ${ns}`);
+      if (ns) steps.push(ns);
       const iTopics = r.intermediate?.all_topics?.length ? r.intermediate.all_topics : r.intermediate?.topics;
-      (iTopics || []).slice(0, 2).forEach((t) => steps.push(`Grow: ${t}`));
+      (iTopics || []).slice(0, 2).forEach((t) => steps.push(t));
       const out = steps.slice(0, 6);
       if (out.length) return out;
     }
     return [
-      ...(userInterests?.allInterests?.slice(0, 2).map((i) => `Focus: ${i.domain}`) || []),
+      ...(userInterests?.allInterests?.slice(0, 2).map((i) => i.domain) || []),
       ...(performance?.analysis?.recommendations?.slice(0, 2) || []),
-      ...(Object.keys(performance?.byInterest || {}).slice(0, 2).map((k) => `Practice: ${k}`) || []),
+      ...(Object.keys(performance?.byInterest || {}).slice(0, 2) || []),
     ].slice(0, 6);
   }, [pathIntel, performance, userInterests, learningPathUnlocked]);
 
@@ -553,57 +555,8 @@ const Dashboard: React.FC = () => {
   );
   const learningChartUid = React.useId().replace(/:/g, '');
 
-  // Download final results as text file
-  const handleDownloadResults = () => {
-    if (!performance || !user) return;
-    const lines = [
-      `PERSONALIZED LEARNING PATH GENERATOR`,
-      `Final Results Report`,
-      `Generated: ${new Date().toLocaleString()}`,
-      ``,
-      `Student: ${user.firstName} ${user.lastName}`,
-      `Email: ${user.email}`,
-      ``,
-      `=== PERFORMANCE SUMMARY ===`,
-      `Total Quizzes Taken: ${performance.overallStats.totalQuizzes}`,
-      `Average Score: ${performance.overallStats.averageScore}%`,
-      `Best Score: ${performance.overallStats.bestScore}%`,
-      `Total Questions Answered: ${performance.overallStats.totalQuestions}`,
-      `Correct Answers: ${performance.overallStats.totalCorrect}`,
-      `Overall Accuracy: ${performance.overallStats.totalQuestions > 0 ? Math.round((performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100) : 0}%`,
-      ``,
-      `=== LEARNING INTERESTS ===`,
-      userInterests ? `Primary Interest: ${interestUi.primary} (${interestUi.confidencePct}% confidence)` : 'Not assessed yet',
-      ...(userInterests?.allInterests.slice(0, 5).map(i => `  - ${i.domain}: ${getPercentage(i.confidence * 10)}%`) ?? []),
-      ``,
-      `=== PERFORMANCE BY TOPIC ===`,
-      ...Object.entries(performance.byInterest).map(([topic, stats]) =>
-        `${topic}: ${stats.averageScore}% avg (${stats.totalQuizzes} quizzes)`
-      ),
-      ``,
-      `=== STRENGTHS ===`,
-      ...(performance.analysis.strengths.map(s => `  ✓ ${s.interest}: ${s.score}%`)),
-      ``,
-      `=== AREAS TO IMPROVE ===`,
-      ...(performance.analysis.weaknesses.map(w => `  ✗ ${w.interest}: ${w.score}%`)),
-      ``,
-      `=== RECOMMENDATIONS ===`,
-      ...(performance.analysis.recommendations.map(r => `  • ${r}`)),
-    ];
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${user.firstName}_${user.lastName}_results.txt`;
-    document.body.appendChild(a);
-    a.click();
-    URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  };
-
-  // If not authenticated, redirect to login
   if (!isAuthenticated || !user) {
-    return <Navigate to="/login" state={{ from: '/dashboard' }} replace />;
+    return <Navigate to="/login" state={{ from: '/home' }} replace />;
   }
 
   if (loading) {
@@ -636,12 +589,9 @@ const Dashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4">
         {/* Welcome Header */}
         <div className="mb-8">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">
-            Welcome back, {user.firstName}! 👋
+          <h1 className="text-3xl font-bold text-slate-900">
+            Welcome back, {user.firstName} <span className="inline-block" aria-hidden>👋</span>
           </h1>
-          <p className="text-lg text-slate-600">
-            Your personalized learning dashboard
-          </p>
         </div>
 
         {/* Onboarding Flow - Interest Assessment */}
@@ -656,29 +606,20 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold mb-3">
-                  🎯 Start Your Learning Journey
+                <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
+                  <span aria-hidden>✨</span>
+                  Get started
                 </h2>
-                <p className="text-indigo-100 mb-6 text-lg leading-relaxed">
-                  Welcome to your dashboard! Start with the <strong>Interest Checker</strong> so we can store your preferences in your profile and generate quizzes and learning paths based on your own data.
+                <p className="text-indigo-100 mb-6">
+                  Rate your interests so we can personalize your quizzes and learning path.
                 </p>
-                <div className="flex flex-wrap gap-4">
-                  <button
-                    onClick={() => navigate('/quizzes/interest-check')}
-                    className="px-8 py-4 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-all shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center gap-3"
-                  >
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                    </svg>
-                    Take Interest Assessment
-                  </button>
-                  <div className="flex items-center gap-2 text-indigo-100">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="text-sm">Takes only 5 minutes</span>
-                  </div>
-                </div>
+                <button
+                  onClick={() => navigate('/quizzes/interest-check')}
+                  className="px-6 py-3 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2"
+                >
+                  <span aria-hidden>🎯</span>
+                  Rate your interests
+                </button>
               </div>
             </div>
           </div>
@@ -686,61 +627,60 @@ const Dashboard: React.FC = () => {
 
         {/* Completed Onboarding - Show Interests */}
         {hasCompletedOnboarding && userInterests && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-            <div className="flex items-start justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                  Your Learning Profile
-                </h2>
-                <p className="text-slate-600">
-                  Based on your interest assessment
-                </p>
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span aria-hidden>🎯</span>
+                Your interests
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => navigate('/quizzes/interest-check')}
+                  className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition-colors text-sm flex items-center gap-1.5"
+                >
+                  <span aria-hidden>✏️</span>
+                  Update
+                </button>
+                {learningPathUnlocked ? (
+                  <button
+                    onClick={() => navigate('/learning-path')}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 flex items-center gap-1.5"
+                  >
+                    <span aria-hidden>🗺️</span>
+                    Learning path
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => navigate('/quizzes')}
+                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium text-sm hover:bg-indigo-700 flex items-center gap-1.5"
+                  >
+                    <span aria-hidden>📝</span>
+                    Take a quiz
+                  </button>
+                )}
               </div>
-              <button
-                onClick={() => navigate('/quizzes/interest-check')}
-                className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition-colors flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Retake Assessment
-              </button>
-              {learningPathUnlocked ? (
-                <button
-                  onClick={() => navigate('/learning-path')}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 hover:bg-indigo-700"
-                >
-                  View Full Path →
-                </button>
-              ) : (
-                <button
-                  onClick={() => navigate('/quizzes')}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium transition-colors flex items-center gap-2 hover:bg-indigo-700"
-                >
-                  Take Quiz to Unlock Path
-                </button>
-              )}            </div>
+            </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Primary Interest */}
+            <div className={topInterestRows.length > 0 ? 'grid md:grid-cols-2 gap-6' : ''}>
               <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                    </svg>
+                  <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-2xl">
+                    <span aria-hidden>{getInterestDomainIcon(interestUi.primary)}</span>
                   </div>
                   <div>
-                    <p className="text-sm text-indigo-600 font-medium">Primary Interest</p>
+                    <p className="text-sm text-indigo-600 font-medium flex items-center gap-1">
+                      <span aria-hidden>⭐</span>
+                      Top pick
+                    </p>
                     <h3 className="text-xl font-bold text-slate-900">{interestUi.primary}</h3>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-white rounded-full h-3 overflow-hidden">
-                    <div 
+                    <div
                       className="bg-gradient-to-r from-indigo-600 to-purple-600 h-full rounded-full transition-all"
                       style={{ width: `${interestUi.confidencePct}%` }}
-                    ></div>
+                    />
                   </div>
                   <span className="text-sm font-semibold text-indigo-600">
                     {interestUi.confidencePct}%
@@ -748,57 +688,49 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Top Interests */}
-              <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
-                <h3 className="text-sm font-semibold text-slate-700 mb-4">Your Top Interests</h3>
-                <div className="space-y-3">
-                  {topInterestRows.map((row) => (
-                    <div key={row.domain} className="flex items-center justify-between">
-                      <span className="text-slate-900 font-medium">{row.domain}</span>
-                      <span className="text-sm text-slate-600">{row.pct}%</span>
-                    </div>
-                  ))}
+              {topInterestRows.length > 0 && (
+                <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-1.5">
+                    <span aria-hidden>📋</span>
+                    Other ratings
+                  </h3>
+                  <div className="space-y-4">
+                    {topInterestRows.map((row) => (
+                      <div key={row.domain}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-slate-900 font-medium flex items-center gap-2">
+                            <span className="text-lg" aria-hidden>{getInterestDomainIcon(row.domain)}</span>
+                            {row.domain}
+                          </span>
+                          <span className="text-sm font-semibold text-slate-600 tabular-nums">{row.pct}%</span>
+                        </div>
+                        <div className="bg-white rounded-full h-2 overflow-hidden border border-slate-100">
+                          <div
+                            className="bg-indigo-400 h-full rounded-full transition-all"
+                            style={{ width: `${row.pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Motivational Message (#12) */}
-        {!dismissedMotivation && (
-          <div className={`bg-gradient-to-r ${todayMsg.color} rounded-2xl p-6 mb-8 text-white relative`}>
-            <button
-              onClick={() => setDismissedMotivation(true)}
-              className="absolute top-4 right-4 text-white/70 hover:text-white text-xl leading-none"
-            >×</button>
-            <div className="flex items-center gap-4">
-              <span className="text-4xl">{todayMsg.emoji}</span>
-              <div>
-                <p className="text-sm font-medium text-white/80 mb-1">Daily Motivation</p>
-                <p className="text-lg font-semibold">{todayMsg.text}</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Personalized Learning Path — after quiz */}
         {hasCompletedOnboarding && userInterests && learningPathUnlocked && learningPathSteps.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">
-                  🧭 Your Learning Path
-                </h2>
-                <p className="text-slate-600 mt-1">
-                  Live roadmap for <strong>{interestUi.primary}</strong>
-                  {pathIntel?.roadmap ? ' • synced from your assessment + adaptive engine' : ''}
-                </p>
-              </div>
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+            <div className="flex items-center justify-between mb-6 gap-3">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span aria-hidden>🗺️</span>
+                Learning path
+              </h2>
               <button
                 onClick={() => navigate('/learning-path')}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 transition-colors"
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
               >
-                Full path →
+                Open path
               </button>
             </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
@@ -831,58 +763,23 @@ const Dashboard: React.FC = () => {
                   style={{ width: `${(completedSteps / Math.max(1, learningPathSteps.length)) * 100}%` }}
                 />
               </div>
-              <span className="text-sm font-semibold text-slate-700">
-                {completedSteps}/{learningPathSteps.length} completed
+              <span className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+                <span aria-hidden>✅</span>
+                {completedSteps}/{learningPathSteps.length} done
               </span>
             </div>
           </div>
         )}
 
-        {/* Live résumé / CV talking points — after quiz unlocks path */}
-        {hasCompletedOnboarding && userInterests && learningPathUnlocked && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-            <h2 className="text-2xl font-bold text-slate-900 mb-1">Résumé talking points</h2>
-            <p className="text-slate-600 text-sm mb-4">
-              Pulled dynamically from your profile text, roadmap milestones, and skill gaps (not fixed copy).
-            </p>
-            {pathIntelError && (
-              <p className="text-sm text-amber-700 mb-3">{pathIntelError}</p>
-            )}
-            {(pathIntel?.resume_outline?.bullets?.length ?? 0) > 0 ? (
-              <ul className="space-y-2 text-slate-700 text-sm">
-                {(pathIntel?.resume_outline?.bullets ?? []).slice(0, 10).map((b, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-indigo-500 font-bold">•</span>
-                    <span>{b}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              !pathIntelError && (
-                <p className="text-sm text-slate-500">
-                  Loading résumé hints… Fill “known / want / goals” in the interest assessment for richer bullets.
-                </p>
-              )
-            )}
-            {!!pathIntel?.resume_outline?.keywords?.length && (
-              <div className="flex flex-wrap gap-2 mt-4">
-                {pathIntel.resume_outline.keywords.slice(0, 10).map((kw) => (
-                  <span key={kw} className="text-xs bg-slate-100 text-slate-800 px-2.5 py-1 rounded-full border border-slate-200">
-                    {kw}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Resume Lessons (#6) */}
         {history.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-2xl font-bold text-slate-900">📖 Resume Where You Left Off</h2>
-              <button onClick={() => navigate('/quizzes')} className="text-sm text-indigo-600 hover:underline font-medium">
-                View All →
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <span aria-hidden>📝</span>
+                Recent quizzes
+              </h2>
+              <button onClick={() => navigate('/quizzes/recent')} className="text-sm text-indigo-600 hover:underline font-medium">
+                View all
               </button>
             </div>
             <div className="space-y-3">
@@ -895,7 +792,10 @@ const Dashboard: React.FC = () => {
                       {attempt.score}%
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-900">{attempt.interest}</p>
+                      <p className="font-semibold text-slate-900 flex items-center gap-2">
+                        <span aria-hidden>{getInterestDomainIcon(attempt.interest)}</span>
+                        {attempt.interest}
+                      </p>
                       <p className="text-xs text-slate-500">{attempt.level} • {new Date(attempt.completedAt).toLocaleDateString()}</p>
                     </div>
                   </div>
@@ -909,130 +809,6 @@ const Dashboard: React.FC = () => {
               ))}
             </div>
           </div>
-        )}
-
-        {/* Quick Actions */}
-        <div className="grid md:grid-cols-4 gap-6 mb-8">
-          {/* Take Quiz */}
-          <button
-            onClick={() => navigate('/quizzes')}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 hover:shadow-lg transition-all text-left group"
-          >
-            <div className="w-14 h-14 bg-indigo-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-indigo-600 transition-colors">
-              <svg className="w-7 h-7 text-indigo-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Take a Quiz</h3>
-            <p className="text-slate-600">Test your knowledge and track your progress</p>
-          </button>
-
-          {/* View Profile */}
-          <button
-            onClick={() => navigate('/profile')}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 hover:shadow-lg transition-all text-left group"
-          >
-            <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-600 transition-colors">
-              <svg className="w-7 h-7 text-purple-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Your Profile</h3>
-            <p className="text-slate-600">Manage your account and preferences</p>
-          </button>
-
-          {/* Settings */}
-          <button
-            onClick={() => navigate('/settings')}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 hover:shadow-lg transition-all text-left group"
-          >
-            <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-slate-600 transition-colors">
-              <svg className="w-7 h-7 text-slate-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Settings</h3>
-            <p className="text-slate-600">Customize your learning experience</p>
-          </button>
-
-          {/* Send Feedback */}
-          <button
-            onClick={() => navigate('/feedback')}
-            className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 hover:shadow-lg transition-all text-left group"
-          >
-            <div className="w-14 h-14 bg-emerald-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-emerald-600 transition-colors">
-              <svg className="w-7 h-7 text-emerald-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Send Feedback</h3>
-            <p className="text-slate-600">Share your thoughts and suggestions</p>
-          </button>
-        </div>
-
-        {/* Performance Overview and Learning Curve Chart */}
-        {performance && performance.overallStats.totalQuizzes > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
-              <h2 className="text-2xl font-bold text-slate-900 mb-6">Your Performance</h2>
-              
-              <div className="grid md:grid-cols-3 gap-6 mb-8">
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1">
-                    {performance.overallStats.totalQuizzes}
-                  </p>
-                  <p className="text-sm text-slate-600">Quizzes Taken</p>
-                </div>
-
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1">
-                    {performance.overallStats.averageScore}%
-                  </p>
-                  <p className="text-sm text-slate-600">Average Score</p>
-                </div>
-
-                <div className="text-center">
-                  <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                    <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                    </svg>
-                  </div>
-                  <p className="text-3xl font-bold text-slate-900 mb-1">
-                    {performance.overallStats.bestScore}%
-                  </p>
-                  <p className="text-sm text-slate-600">Best Score</p>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => navigate('/quizzes')}
-                  className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
-                >
-                  View All Quizzes
-                </button>
-                <button
-                  onClick={handleDownloadResults}
-                  className="flex items-center gap-2 px-6 py-3 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
-                  title="Download Final Results"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download Results
-                </button>
-              </div>
-            </div>
         )}
 
         {/* Learning curve — real quiz history, last 8 calendar weeks (Mon-start) */}
@@ -1050,9 +826,9 @@ const Dashboard: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             }
-            title="Ready to Start Learning?"
-            description="You've completed your interest assessment! Now it's time to test your knowledge with personalized quizzes."
-            actionLabel="Browse Quizzes"
+            title="No quizzes yet"
+            description="Take a quiz to see your scores and progress."
+            actionLabel="Browse quizzes 🎯"
             onAction={() => navigate('/quizzes')}
           />
         )}

@@ -1257,13 +1257,13 @@ const LearningPath: React.FC = () => {
           <div className="flex gap-3">
             <button
               onClick={() => {
-                if (window.confirm('Do you really want to go to dashboard')) {
-                  navigate('/dashboard');
+                if (window.confirm('Go back to Home?')) {
+                  navigate('/home');
                 }
               }}
               className="px-4 py-2 border border-slate-200 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-50 transition-colors"
             >
-              Dashboard
+              Home
             </button>
             <button
               onClick={() => navigate('/quizzes')}
