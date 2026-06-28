@@ -13,8 +13,7 @@ import Contact from './pages/Contact';
 // User Pages
 import Login from './pages/USER/Login';
 import Register from './pages/USER/Register';
-// EMAIL VERIFICATION DISABLED
-// import VerifyEmail from './pages/USER/VerifyEmail';
+import VerifyEmail from './pages/USER/VerifyEmail';
 import ForgotPassword from './pages/USER/ForgotPassword';
 import ResetPassword from './pages/USER/ResetPassword';
 import UserDashboard from './pages/USER/Dashboard';
@@ -88,8 +87,7 @@ const App: React.FC = () => {
           {/* User Routes */}
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
-          {/* EMAIL VERIFICATION DISABLED */}
-          {/* <Route path="/verify-email" element={<VerifyEmail />} /> */}
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/dashboard" element={<UserDashboard />} />

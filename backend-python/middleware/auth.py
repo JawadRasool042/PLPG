@@ -185,15 +185,14 @@ def require_email_verified(f):
     """
     @wraps(f)
     def decorated(*args, **kwargs):
-        # EMAIL VERIFICATION DISABLED — uncomment block below when re-enabling
-        if False:
-            is_verified = g.user.get('isEmailVerified') if hasattr(g, 'user') else False
-            if not is_verified:
-                return jsonify({
-                    'detail': 'Email verification required',
-                    'error_code': 'EMAIL_NOT_VERIFIED'
-                }), 403
-
+        is_verified = g.user.get('isEmailVerified') if hasattr(g, 'user') else False
+        
+        if not is_verified:
+            return jsonify({
+                'detail': 'Email verification required',
+                'error_code': 'EMAIL_NOT_VERIFIED'
+            }), 403
+        
         return f(*args, **kwargs)
     
     return decorated

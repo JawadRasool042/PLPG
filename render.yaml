@@ -12,8 +12,6 @@ services:
     envVars:
       - key: FLASK_ENV
         value: production
-      - key: EMAIL_VERIFICATION_DISABLED
-        value: "true"
       - key: PYTHON_VERSION
         value: 3.11.9
       # Set secrets in Render Dashboard after deploy (do not commit real values):
