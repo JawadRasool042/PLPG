@@ -192,7 +192,7 @@ export const useStore = create<AppState>()(
           return true;
         } catch (error: any) {
           console.error('Login error:', error);
-          return false;
+          throw error;
         }
       },
 
@@ -204,16 +204,6 @@ export const useStore = create<AppState>()(
           userData.lastName,
           'Student'
         );
-        set({
-          user: {
-            id: newUser.id,
-            firstName: newUser.firstName,
-            lastName: newUser.lastName,
-            email: newUser.email,
-            role: newUser.role,
-          },
-          isAuthenticated: true,
-        });
         return newUser;
       },
 
