@@ -224,13 +224,15 @@ def root():
 @app.route("/api/health", methods=["GET"])
 def health():
     """Health check endpoint"""
+    cfg = get_config()
     return jsonify({
         "status": "ok",
         "model_loaded": MODEL is not None,
         "model_path": MODEL_PATH,
         "dataset": DATASET_OVERRIDE or DATASET_PATH,
         "domains": DOMAINS,
-        "version": "1.0.0",
+        "version": "1.0.1",
+        "email_verification_disabled": cfg.EMAIL_VERIFICATION_DISABLED,
         "python_backend": True
     })
 

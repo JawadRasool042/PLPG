@@ -48,8 +48,8 @@ config = get_config()
 auth_bp = Blueprint('auth', __name__)
 logger = logging.getLogger(__name__)
 
-# Email verification temporarily disabled — set False to re-enable verify-email + SMTP flow
-EMAIL_VERIFICATION_DISABLED = True
+# Email verification disabled by default — set EMAIL_VERIFICATION_DISABLED=false to re-enable
+EMAIL_VERIFICATION_DISABLED = config.EMAIL_VERIFICATION_DISABLED
 
 
 # ============================================
