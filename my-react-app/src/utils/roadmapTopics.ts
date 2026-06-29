@@ -140,3 +140,47 @@ export function mergeUniqueTopicStrings(...lists: string[][]): string[] {
   }
   return merged;
 }
+
+export type RoadmapPhaseItem = {
+  phase: string;
+  topics: string[];
+  duration: string;
+};
+
+/** Build roadmap phase rows from API roadmap payload (same shape as Learning Path page). */
+export function buildRoadmapPhaseList(
+  roadmapFromApi: Record<string, unknown> | null | undefined,
+): RoadmapPhaseItem[] {
+  if (!roadmapFromApi || typeof roadmapFromApi !== 'object') return [];
+
+  type StageBlock = {
+    topics?: string[];
+    all_topics?: string[];
+    duration_days?: number;
+    duration_label?: string;
+  };
+
+  const out: RoadmapPhaseItem[] = [];
+  for (const k of ROADMAP_PHASE_KEYS) {
+    const block = getRoadmapStageBlock(roadmapFromApi, k) as StageBlock | undefined;
+    const full = block?.all_topics?.filter((t) => typeof t === 'string' && t.trim());
+    const short = block?.topics?.filter((t) => typeof t === 'string' && t.trim());
+    const topics = (full?.length ? full : short) || [];
+    if (!topics.length) continue;
+
+    const label =
+      typeof block?.duration_label === 'string' && block.duration_label.trim()
+        ? block.duration_label.trim()
+        : block?.duration_days != null
+          ? `${block.duration_days} days`
+          : '—';
+    const duration = label === '—' ? 'Duration: —' : `Duration: ${label}`;
+
+    out.push({
+      phase: ROADMAP_PHASE_LABELS[k],
+      topics,
+      duration,
+    });
+  }
+  return out;
+}

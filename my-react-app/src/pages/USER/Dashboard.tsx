@@ -4,7 +4,6 @@ import { useStore } from '../../store/useStore';
 import { getUserPerformance, getQuizHistory, type UserPerformance, type QuizAttempt } from '../../services/quizService';
 import { generateRoadmap, type RoadmapResponse } from '../../services/learningIntelligenceService';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
-import EmptyState from '../../components/EmptyState';
 import {
   buildRoadmapScoresPayload,
   getEffectivePrimaryInterest,
@@ -14,8 +13,8 @@ import {
   ratedDomainsFromScores,
 } from '../../utils/interestDisplay';
 import { hasCompletedDomainQuiz } from '../../utils/learningPathGate';
-import { computePathProgression, getDomainPerfSnapshot, resolveCurrentPhase } from '../../utils/learningPathProgress';
-import { normalizeRoadmapDomain } from '../../utils/roadmapTopics';
+import { normalizeRoadmapDomain, buildRoadmapPhaseList } from '../../utils/roadmapTopics';
+import LearningPathRoadmapPreview from '../../components/learning/LearningPathRoadmapPreview';
 
 const LEARNING_PROGRESS_WEEKS = 8;
 
@@ -395,12 +394,20 @@ function LearningProgressCard({
   );
 }
 
+type QuickAction = {
+  label: string;
+  description: string;
+  icon: string;
+  to: string;
+};
+
 const Dashboard: React.FC = () => {
   const { isAuthenticated, user, hasCompletedOnboarding, userInterests } = useStore();
   const navigate = useNavigate();
   const [performance, setPerformance] = useState<UserPerformance | null>(null);
   const [history, setHistory] = useState<QuizAttempt[]>([]);
   const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(null);
+  const [pathIntelLoading, setPathIntelLoading] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
@@ -451,6 +458,7 @@ const Dashboard: React.FC = () => {
         } else if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) {
           setPathIntel(null);
         } else {
+        setPathIntelLoading(true);
         try {
           const secondary = (userInterests.allInterests || [])
             .map((i) => i.domain)
@@ -483,6 +491,8 @@ const Dashboard: React.FC = () => {
         } catch (e: unknown) {
           setPathIntel(null);
           console.error('Could not load learning path preview:', e);
+        } finally {
+          setPathIntelLoading(false);
         }
         }
       }
@@ -499,61 +509,68 @@ const Dashboard: React.FC = () => {
     }
   }, [isAuthenticated, user, loadData]);
 
-  const learningPathSteps = useMemo(() => {
-    if (!learningPathUnlocked) return [];
-    const r = pathIntel?.roadmap as
-      | {
-          basic?: { topics?: string[]; all_topics?: string[] };
-          beginner?: { topics?: string[]; all_topics?: string[] };
-          intermediate?: { topics?: string[]; all_topics?: string[] };
-          advanced?: { topics?: string[]; all_topics?: string[] };
-          expert?: { topics?: string[]; all_topics?: string[] };
-          next_step?: { title?: string };
-        }
-      | undefined;
-    if (r) {
-      const steps: string[] = [];
-      const bTopics = r.basic?.all_topics?.length ? r.basic.all_topics : r.basic?.topics ?? r.beginner?.all_topics ?? r.beginner?.topics;
-      (bTopics || []).slice(0, 2).forEach((t) => steps.push(t));
-      const ns = r.next_step?.title;
-      if (ns) steps.push(ns);
-      const iTopics = r.intermediate?.all_topics?.length ? r.intermediate.all_topics : r.intermediate?.topics;
-      (iTopics || []).slice(0, 2).forEach((t) => steps.push(t));
-      const out = steps.slice(0, 6);
-      if (out.length) return out;
-    }
-    return [
-      ...(userInterests?.allInterests?.slice(0, 2).map((i) => i.domain) || []),
-      ...(performance?.analysis?.recommendations?.slice(0, 2) || []),
-      ...(Object.keys(performance?.byInterest || {}).slice(0, 2) || []),
-    ].slice(0, 6);
-  }, [pathIntel, performance, userInterests, learningPathUnlocked]);
+  const roadmapPhases = useMemo(
+    () => buildRoadmapPhaseList((pathIntel?.roadmap as Record<string, unknown>) ?? null),
+    [pathIntel?.roadmap],
+  );
 
-  const completedSteps = useMemo(() => {
-    if (!learningPathSteps.length) return 0;
-    const primary = normalizeRoadmapDomain(primaryInterest || '');
-    const perf = getDomainPerfSnapshot(performance, primary);
-    const adaptiveState = (
-      pathIntel?.roadmap as { adaptive_state?: Record<string, number | string> } | undefined
-    )?.adaptive_state;
-    const totalPhases = Math.max(learningPathSteps.length, 1);
-    const currentPhase = resolveCurrentPhase(totalPhases, perf, adaptiveState);
-    const liveProgress = computePathProgression(totalPhases, currentPhase, perf);
-    const fromLive = Math.round(liveProgress * learningPathSteps.length);
-    const fromQuizzes = performance
-      ? Math.min(Math.floor(performance.overallStats.totalQuizzes / 2), learningPathSteps.length)
-      : 0;
-    if (pathIntel?.roadmap || performance) {
-      return Math.min(learningPathSteps.length, Math.max(fromLive, fromQuizzes));
-    }
-    return fromQuizzes;
-  }, [learningPathSteps.length, pathIntel, performance, primaryInterest]);
+  const adaptiveState = useMemo(
+    () =>
+      (pathIntel?.roadmap as { adaptive_state?: Record<string, number | string> } | undefined)
+        ?.adaptive_state,
+    [pathIntel?.roadmap],
+  );
 
   const weeklyProgress = useMemo(
     () => buildWeeklyProgress(history, LEARNING_PROGRESS_WEEKS),
     [history],
   );
   const learningChartUid = React.useId().replace(/:/g, '');
+
+  const quickActions = useMemo<QuickAction[]>(
+    () => [
+      {
+        label: 'Practice',
+        description: 'Topic quizzes',
+        icon: '📝',
+        to: '/quizzes',
+      },
+      {
+        label: 'Learning path',
+        description: learningPathUnlocked ? 'Your roadmap' : 'Unlock with a quiz',
+        icon: '🗺️',
+        to: learningPathUnlocked ? '/learning-path' : '/quizzes',
+      },
+      {
+        label: 'Notes',
+        description: 'Study notes',
+        icon: '📓',
+        to: '/notes',
+      },
+      {
+        label: 'AI assistant',
+        description: 'Ask questions',
+        icon: '💬',
+        to: '/chat',
+      },
+    ],
+    [learningPathUnlocked],
+  );
+
+  const statsSummary = useMemo(() => {
+    const total = performance?.overallStats.totalQuizzes ?? 0;
+    const avg = performance?.overallStats.averageScore ?? 0;
+    const best = performance?.overallStats.bestScore ?? 0;
+    const accuracy =
+      performance && performance.overallStats.totalQuestions > 0
+        ? Math.round(
+            (performance.overallStats.totalCorrect / performance.overallStats.totalQuestions) * 100,
+          )
+        : null;
+    return { total, avg, best, accuracy };
+  }, [performance]);
+
+  const hasQuizActivity = statsSummary.total > 0 || history.length > 0;
 
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" state={{ from: '/home' }} replace />;
@@ -592,7 +609,60 @@ const Dashboard: React.FC = () => {
           <h1 className="text-3xl font-bold text-slate-900">
             Welcome back, {user.firstName} <span className="inline-block" aria-hidden>👋</span>
           </h1>
+          <p className="mt-2 text-slate-600 text-sm sm:text-base max-w-2xl">
+            {hasCompletedOnboarding
+              ? hasQuizActivity
+                ? 'Here’s your progress and what to do next.'
+                : 'Pick a topic below and take your first quiz to unlock scores and your learning path.'
+              : 'Rate your interests first — we’ll tailor quizzes and your path to what you care about.'}
+          </p>
         </div>
+
+        {/* Quick actions */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {quickActions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={() => navigate(action.to)}
+              className="group text-left bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:border-indigo-200 hover:shadow-md hover:bg-indigo-50/40 transition-all"
+            >
+              <span className="text-2xl mb-3 block" aria-hidden>{action.icon}</span>
+              <p className="font-semibold text-slate-900 group-hover:text-indigo-700">{action.label}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{action.description}</p>
+            </button>
+          ))}
+        </div>
+
+        {/* At-a-glance stats */}
+        {hasCompletedOnboarding && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Quizzes</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+                {hasQuizActivity ? statsSummary.total : '—'}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg score</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+                {hasQuizActivity ? `${Math.round(statsSummary.avg)}%` : '—'}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Best score</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+                {hasQuizActivity ? `${Math.round(statsSummary.best)}%` : '—'}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Accuracy</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+                {statsSummary.accuracy != null ? `${statsSummary.accuracy}%` : '—'}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Onboarding Flow - Interest Assessment */}
         {!hasCompletedOnboarding && (
@@ -719,56 +789,15 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {hasCompletedOnboarding && userInterests && learningPathUnlocked && learningPathSteps.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
-            <div className="flex items-center justify-between mb-6 gap-3">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span aria-hidden>🗺️</span>
-                Learning path
-              </h2>
-              <button
-                onClick={() => navigate('/learning-path')}
-                className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
-              >
-                Open path
-              </button>
-            </div>
-            <div className="flex items-center gap-2 overflow-x-auto pb-2">
-              {learningPathSteps.map((step: string, i: number) => (
-                <React.Fragment key={i}>
-                  <div className={`flex-shrink-0 flex flex-col items-center gap-2`}>
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all ${
-                      i < completedSteps
-                        ? 'bg-emerald-500 border-emerald-500 text-white'
-                        : i === completedSteps
-                        ? 'bg-indigo-600 border-indigo-600 text-white ring-4 ring-indigo-100'
-                        : 'bg-white border-slate-200 text-slate-400'
-                    }`}>
-                      {i < completedSteps ? '✓' : i + 1}
-                    </div>
-                    <span className={`text-xs font-medium text-center w-20 sm:w-24 ${i <= completedSteps ? 'text-slate-700' : 'text-slate-400'}`}>
-                      {step}
-                    </span>
-                  </div>
-                  {i < learningPathSteps.length - 1 && (
-                    <div className={`flex-shrink-0 h-0.5 w-8 mt-[-16px] ${i < completedSteps ? 'bg-emerald-400' : 'bg-slate-200'}`} />
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="mt-4 flex items-center gap-3">
-              <div className="flex-1 bg-slate-100 rounded-full h-2">
-                <div
-                  className="bg-gradient-to-r from-indigo-500 to-emerald-500 h-2 rounded-full transition-all"
-                  style={{ width: `${(completedSteps / Math.max(1, learningPathSteps.length)) * 100}%` }}
-                />
-              </div>
-              <span className="text-sm font-semibold text-slate-700 flex items-center gap-1">
-                <span aria-hidden>✅</span>
-                {completedSteps}/{learningPathSteps.length} done
-              </span>
-            </div>
-          </div>
+        {hasCompletedOnboarding && userInterests && learningPathUnlocked && (
+          <LearningPathRoadmapPreview
+            primary={normalizeRoadmapDomain(primaryInterest || interestUi.primary)}
+            phases={roadmapPhases}
+            performance={performance}
+            adaptiveState={adaptiveState}
+            loading={pathIntelLoading}
+            onOpenPath={() => navigate('/learning-path')}
+          />
         )}
 
         {history.length > 0 && (
@@ -812,25 +841,36 @@ const Dashboard: React.FC = () => {
         )}
 
         {/* Learning curve — real quiz history, last 8 calendar weeks (Mon-start) */}
-        {hasCompletedOnboarding && (
+        {hasCompletedOnboarding && hasQuizActivity && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
             <LearningProgressCard weeklyProgress={weeklyProgress} chartUid={learningChartUid} />
           </div>
         )}
 
-        {/* No Performance Yet */}
-        {performance && performance.overallStats.totalQuizzes === 0 && hasCompletedOnboarding && (
-          <EmptyState
-            icon={
-              <svg className="w-16 h-16 sm:w-20 sm:h-20 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-            }
-            title="No quizzes yet"
-            description="Take a quiz to see your scores and progress."
-            actionLabel="Browse quizzes 🎯"
-            onAction={() => navigate('/quizzes')}
-          />
+        {/* First quiz prompt — compact when no activity yet */}
+        {hasCompletedOnboarding && !hasQuizActivity && (
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-6">
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <span aria-hidden>🎯</span>
+                  Ready for your first quiz?
+                </h2>
+                <p className="text-slate-600 mt-2 text-sm sm:text-base">
+                  Start with{' '}
+                  <span className="font-medium text-slate-800">{interestUi.primary}</span>
+                  {primaryInterest ? '' : ' your top interest'} — scores, streaks, and your learning path unlock after you practice.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate('/quizzes')}
+                className="shrink-0 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                Start quiz
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

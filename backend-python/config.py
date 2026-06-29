@@ -102,6 +102,11 @@ class Config:
     FRONTEND_BASE_URL = os.getenv('FRONTEND_BASE_URL', 'http://localhost:5173')
     APP_DOMAIN = os.getenv('APP_DOMAIN', 'localhost')
 
+    # Auth — skip email verification by default (set EMAIL_VERIFICATION_DISABLED=false to re-enable)
+    EMAIL_VERIFICATION_DISABLED = os.getenv(
+        'EMAIL_VERIFICATION_DISABLED', 'true'
+    ).lower() in ('true', '1', 'yes')
+
     # Career / salary market (used by OpenAI learning-path generator)
     CAREER_MARKET_REGION = os.getenv('CAREER_MARKET_REGION', 'Pakistan')
     

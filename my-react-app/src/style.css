@@ -442,7 +442,7 @@ a {
   }
 
   .nav-pill-track--app {
-    @apply max-w-[min(100vw-12rem,34rem)];
+    max-width: min(100vw - 12rem, 34rem);
   }
 
   .nav-pill-link {
@@ -555,19 +555,23 @@ a {
   }
 
   .nav-dropdown--notif {
-    @apply w-[min(100vw-2rem, 20rem)] sm:w-80;
+    width: min(100vw - 2rem, 20rem);
+    @apply sm:w-80;
   }
 
   .nav-dropdown--profile {
-    @apply w-[min(100vw-2rem, 16rem)] sm:w-64;
+    width: min(100vw - 2rem, 16rem);
+    @apply sm:w-64;
   }
 
   .nav-dropdown--more {
-    @apply w-[min(100vw-2rem,14rem)] sm:w-52;
+    width: min(100vw - 2rem, 14rem);
+    @apply sm:w-52;
   }
 
   .nav-dropdown--group {
-    @apply left-0 top-[calc(100%+6px)] w-[min(100vw-2rem,17rem)] sm:w-72;
+    width: min(100vw - 2rem, 17rem);
+    @apply left-0 top-[calc(100%+6px)] sm:w-72;
   }
 
   .nav-dropdown-section-label {
@@ -635,7 +639,8 @@ a {
   }
 
   .nav-drawer {
-    @apply fixed bottom-0 right-0 top-14 z-50 w-[min(100vw-3rem,20rem)] overflow-y-auto border-l border-border/80 bg-background/95 p-4 shadow-xl backdrop-blur-md md:hidden;
+    width: min(100vw - 3rem, 20rem);
+    @apply fixed bottom-0 right-0 top-14 z-50 overflow-y-auto border-l border-border/80 bg-background/95 p-4 shadow-xl backdrop-blur-md md:hidden;
   }
 
   .nav-drawer-label {

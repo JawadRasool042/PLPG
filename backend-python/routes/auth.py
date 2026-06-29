@@ -48,6 +48,9 @@ config = get_config()
 auth_bp = Blueprint('auth', __name__)
 logger = logging.getLogger(__name__)
 
+# Email verification disabled by default — set EMAIL_VERIFICATION_DISABLED=false to re-enable
+EMAIL_VERIFICATION_DISABLED = config.EMAIL_VERIFICATION_DISABLED
+
 
 # ============================================
 # Rate Limiting (In-Memory)
@@ -269,121 +272,135 @@ def register():
             'hashedPassword': hashed_password,
             'role': role,
             'isActive': True,
-            'isEmailVerified': False
+            'isEmailVerified': True,  # verification disabled — users can log in immediately
         })
         
         user_id = str(user['_id'])
-        
-        # Generate verification token
-        raw_token = User.set_verification_token(user_id)
         
         log_security_event('USER_REGISTERED', {
             'userId': user_id,
             'email': email,
             'ip': client_ip
         })
-        
-        email_status = get_email_config_status()
-        email_sent = False
 
-        if email_status.get('configured'):
-            try:
-                email_sent = bool(send_verification_email(email, raw_token, first_name))
-                if email_sent:
-                    User.mark_verification_email_dispatched(user_id)
-                else:
-                    last_err = EmailService.get_last_error()
-                    log_security_event('VERIFICATION_EMAIL_FAILED', {
-                        'email': email,
-                        'error': 'SMTP send returned false',
-                        'smtp_last_error': last_err,
-                    })
-            except Exception as e:
-                log_security_event('VERIFICATION_EMAIL_FAILED', {'email': email, 'error': str(e)})
+        # EMAIL VERIFICATION DISABLED — set EMAIL_VERIFICATION_DISABLED=False to re-enable
+        if not EMAIL_VERIFICATION_DISABLED:
+            raw_token = User.set_verification_token(user_id)
 
-        if email_sent:
-            response_payload = {
-                'id': user_id,
-                'email': user['email'],
-                'first_name': user['firstName'],
-                'last_name': user['lastName'],
-                'role': user['role'],
-                'is_active': user['isActive'],
-                'is_email_verified': False,
-                'message': 'Registration successful! Please check your email to verify your account.',
-                'email_sent': True,
-                'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
-            }
-            return jsonify(response_payload), 201
+            email_status = get_email_config_status()
+            email_sent = False
 
-        not_configured = not email_status.get('configured')
-        if _dev_email_bypass_after_failed_send(not_configured):
-            log_security_event('REGISTER_DEV_EMAIL_BYPASS', {
-                'userId': user_id,
-                'email': email,
-                'ip': client_ip,
-                'not_configured': not_configured,
-            })
-            logger.warning(
-                'REGISTER_DEV_EMAIL_BYPASS user=%s email=%s not_configured=%s',
-                user_id,
+            if email_status.get('configured'):
+                try:
+                    email_sent = bool(send_verification_email(email, raw_token, first_name))
+                    if email_sent:
+                        User.mark_verification_email_dispatched(user_id)
+                    else:
+                        last_err = EmailService.get_last_error()
+                        log_security_event('VERIFICATION_EMAIL_FAILED', {
+                            'email': email,
+                            'error': 'SMTP send returned false',
+                            'smtp_last_error': last_err,
+                        })
+                except Exception as e:
+                    log_security_event('VERIFICATION_EMAIL_FAILED', {'email': email, 'error': str(e)})
+
+            if email_sent:
+                response_payload = {
+                    'id': user_id,
+                    'email': user['email'],
+                    'first_name': user['firstName'],
+                    'last_name': user['lastName'],
+                    'role': user['role'],
+                    'is_active': user['isActive'],
+                    'is_email_verified': False,
+                    'message': 'Registration successful! Please check your email to verify your account.',
+                    'email_sent': True,
+                    'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
+                }
+                return jsonify(response_payload), 201
+
+            not_configured = not email_status.get('configured')
+            if _dev_email_bypass_after_failed_send(not_configured):
+                log_security_event('REGISTER_DEV_EMAIL_BYPASS', {
+                    'userId': user_id,
+                    'email': email,
+                    'ip': client_ip,
+                    'not_configured': not_configured,
+                })
+                logger.warning(
+                    'REGISTER_DEV_EMAIL_BYPASS user=%s email=%s not_configured=%s',
+                    user_id,
+                    email,
+                    not_configured,
+                )
+                response_payload = {
+                    'id': user_id,
+                    'email': user['email'],
+                    'first_name': user['firstName'],
+                    'last_name': user['lastName'],
+                    'role': user['role'],
+                    'is_active': user['isActive'],
+                    'is_email_verified': False,
+                    'message': (
+                        'Registration successful. SMTP is skipped in development — use the verification link '
+                        'returned in this response to verify your email.'
+                    ),
+                    'email_sent': False,
+                    'dev_fallback': True,
+                    'verification': _dev_verification_dict(raw_token),
+                    'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
+                }
+                return jsonify(response_payload), 201
+
+            if not_configured:
+                logger.error("Email service not configured - missing EMAIL_USER / EMAIL_PASSWORD (or EMAIL_PASS)")
+                return jsonify({
+                    'success': False,
+                    'detail': (
+                        'Email service is not configured. Set EMAIL_USER / EMAIL_PASSWORD (Gmail App Password) '
+                        'and EMAIL_FROM in .env, then restart Flask. For local testing without SMTP, set '
+                        'ALLOW_DEV_EMAIL_WITHOUT_SMTP=true (non-production only).'
+                    ),
+                    'message': 'Email service is not configured. Registration temporarily unavailable.',
+                    'error_code': 'EMAIL_NOT_CONFIGURED',
+                    'missing_settings': email_status.get('issues', []),
+                    'email_provider': email_status.get('provider', 'gmail'),
+                    'hint': (
+                        'Gmail: use an App Password (Google Account → Security → App passwords). '
+                        'Set EMAIL_USER, EMAIL_PASSWORD, and EMAIL_FROM to real Gmail values, then restart the server.'
+                    ),
+                }), 500
+
+            last_err = EmailService.get_last_error()
+            logger.error(
+                'REGISTER_EMAIL_SEND_FAILED email=%s smtp_last_error=%s',
                 email,
-                not_configured,
+                last_err,
             )
-            response_payload = {
-                'id': user_id,
-                'email': user['email'],
-                'first_name': user['firstName'],
-                'last_name': user['lastName'],
-                'role': user['role'],
-                'is_active': user['isActive'],
-                'is_email_verified': False,
-                'message': (
-                    'Registration successful. SMTP is skipped in development — use the verification link '
-                    'returned in this response to verify your email.'
-                ),
-                'email_sent': False,
-                'dev_fallback': True,
-                'verification': _dev_verification_dict(raw_token),
-                'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
-            }
-            return jsonify(response_payload), 201
-
-        if not_configured:
-            logger.error("Email service not configured - missing EMAIL_USER / EMAIL_PASSWORD (or EMAIL_PASS)")
             return jsonify({
                 'success': False,
                 'detail': (
-                    'Email service is not configured. Set EMAIL_USER / EMAIL_PASSWORD (Gmail App Password) '
-                    'and EMAIL_FROM in .env, then restart Flask. For local testing without SMTP, set '
-                    'ALLOW_DEV_EMAIL_WITHOUT_SMTP=true (non-production only).'
+                    'Failed to send verification email. Check Gmail App Password, EMAIL_FROM, and SMTP settings. '
+                    'In non-production you may set PLPG_FORCE_EMAIL_DEV_LINKS=true to receive a verification URL in the API response.'
                 ),
-                'message': 'Email service is not configured. Registration temporarily unavailable.',
-                'error_code': 'EMAIL_NOT_CONFIGURED',
-                'missing_settings': email_status.get('issues', []),
-                'email_provider': email_status.get('provider', 'gmail'),
-                'hint': (
-                    'Gmail: use an App Password (Google Account → Security → App passwords). '
-                    'Set EMAIL_USER, EMAIL_PASSWORD, and EMAIL_FROM to real Gmail values, then restart the server.'
-                ),
+                'message': 'Verification email could not be sent.',
+                'error_code': 'EMAIL_SEND_FAILED',
+                'smtp_last_error': last_err,
             }), 500
 
-        last_err = EmailService.get_last_error()
-        logger.error(
-            'REGISTER_EMAIL_SEND_FAILED email=%s smtp_last_error=%s',
-            email,
-            last_err,
-        )
         return jsonify({
-            'success': False,
-            'detail': (
-                'Failed to send verification email. Check Gmail App Password, EMAIL_FROM, and SMTP settings. '
-                'In non-production you may set PLPG_FORCE_EMAIL_DEV_LINKS=true to receive a verification URL in the API response.'
-            ),
-            'message': 'Verification email could not be sent.',
-            'error_code': 'EMAIL_SEND_FAILED',
-            'smtp_last_error': last_err,
-        }), 500
+            'id': user_id,
+            'email': user['email'],
+            'first_name': user['firstName'],
+            'last_name': user['lastName'],
+            'role': user['role'],
+            'is_active': user['isActive'],
+            'is_email_verified': True,
+            'message': 'Registration successful! You can log in now.',
+            'email_sent': False,
+            'created_at': user['createdAt'].isoformat() if user.get('createdAt') else None,
+        }), 201
 
     except Exception as e:
         print(f'Registration error: {e}')
@@ -402,6 +419,9 @@ def register():
     message='Too many verification attempts. Please try again later.'
 )
 def verify_email():
+    if EMAIL_VERIFICATION_DISABLED:
+        return jsonify({'detail': 'Email verification is currently disabled'}), 404
+
     data = request.get_json() or {}
     token = normalize_verification_token(data.get('token'))
 
@@ -489,6 +509,9 @@ def verify_email():
 )
 def verify_email_get(token):
     frontend_url = config.FRONTEND_BASE_URL
+    if EMAIL_VERIFICATION_DISABLED:
+        return redirect(f'{frontend_url}/login')
+
     token = normalize_verification_token(token)
 
     if not is_valid_verification_token_shape(token):
@@ -547,6 +570,9 @@ def verify_email_get(token):
     message='Please wait 5 minutes before requesting another verification email.'
 )
 def resend_verification():
+    if EMAIL_VERIFICATION_DISABLED:
+        return jsonify({'detail': 'Email verification is currently disabled'}), 404
+
     data = request.get_json() or {}
     email = data.get('email', '').strip().lower()
     
@@ -709,16 +735,20 @@ def login():
             User.increment_login_attempts(user_id, user)
             log_security_event('LOGIN_INVALID_PASSWORD', {'email': email, 'ip': client_ip})
             return jsonify({'detail': 'Invalid email or password'}), 401
-        
-        # Check if email is verified
+
+        # Email verification disabled — auto-verify legacy accounts so login always works
         if not user.get('isEmailVerified'):
-            log_security_event('LOGIN_UNVERIFIED', {'email': email, 'ip': client_ip})
-            return jsonify({
-                'detail': 'Please verify your email address before logging in',
-                'email': user['email'],
-                'requires_verification': True,
-                'error_code': 'EMAIL_NOT_VERIFIED'
-            }), 403
+            User.mark_email_verified(user_id, client_ip, get_user_agent())
+
+        # --- EMAIL VERIFICATION (disabled) ---
+        # if not user.get('isEmailVerified'):
+        #     log_security_event('LOGIN_UNVERIFIED', {'email': email, 'ip': client_ip})
+        #     return jsonify({
+        #         'detail': 'Please verify your email address before logging in',
+        #         'email': user['email'],
+        #         'requires_verification': True,
+        #         'error_code': 'EMAIL_NOT_VERIFIED'
+        #     }), 403
         
         # Reset login attempts
         User.reset_login_attempts(user_id)
