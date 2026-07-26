@@ -284,7 +284,7 @@ const AIQuiz: React.FC = () => {
   };
 
   const reachedTarget = sessionId
-    ? stats.total >= targetCount
+    ? (questionIndex + 1) >= targetCount
     : false;
 
   if (!isAuthenticated || !user) {
