@@ -109,11 +109,12 @@ def send_message():
     data = request.get_json() or {}
     receiver_id = data.get('receiverId', '').strip()
     text = data.get('text', '').strip()
+    file_url = data.get('fileUrl', None)
 
-    if not receiver_id or not text:
-        return jsonify({'success': False, 'message': 'receiverId and text are required'}), 400
+    if not receiver_id or (not text and not file_url):
+        return jsonify({'success': False, 'message': 'receiverId and text or file are required'}), 400
 
-    if len(text) > 2000:
+    if text and len(text) > 2000:
         return jsonify({'success': False, 'message': 'Message too long (max 2000 chars)'}), 400
 
     # Verify receiver exists
@@ -126,6 +127,7 @@ def send_message():
         'senderId': me,
         'receiverId': receiver_id,
         'text': text,
+        'fileUrl': data.get('fileUrl', None),
         'read': False,
         'createdAt': datetime.utcnow()
     }

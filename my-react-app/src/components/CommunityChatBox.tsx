@@ -49,6 +49,10 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   const [search, setSearch] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  // File preview state — set when user picks a file, cleared after send/cancel
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null); // object URL for images
   const [hasMore, setHasMore] = useState(false);
   const [totalMessages, setTotalMessages] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -105,6 +109,16 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   }, [community._id, token]);
 
   useEffect(() => {
+    // Reset state when switching communities
+    setMessages([]);
+    setSearch('');
+    setReplyTo(null);
+    setHasMore(false);
+    setTotalMessages(0);
+    setTypingUsers(new Set());
+    setUploadProgress(null);
+    setPendingFile(null);
+    setPendingFilePreview(null);
     fetchMessages('');
     fetchMembers();
   }, [fetchMessages, fetchMembers]);
@@ -175,8 +189,15 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   }, [community._id, token]);
 
   // ── Auto-scroll on new messages ──
+  const scrollToBottom = (smooth = true) => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const timer = setTimeout(() => scrollToBottom(true), 50);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   // ── Mark read on focus ──
@@ -226,16 +247,59 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
     setSelectedMentions(prev => [...prev, member._id]);
   };
 
-  // ── Send message ──
-  const sendMessage = () => {
-    if (!text.trim() && !uploading) return;
-    socketRef.current?.emit('send_message', {
-      community_id: community._id,
-      text: text.trim(),
-      parentMessageId: replyTo?._id,
-      mentions: selectedMentions,
-      token,
-    });
+  // ── Send message (text OR pending file) ──
+  const sendMessage = async () => {
+    const hasText = !!text.trim();
+    const hasFile = !!pendingFile;
+    if ((!hasText && !hasFile) || uploading) return;
+
+    // If there's a pending file, upload it first
+    if (hasFile && pendingFile) {
+      setUploading(true);
+      setUploadProgress(`Sending ${pendingFile.name}...`);
+      const formData = new FormData();
+      formData.append('file', pendingFile);
+      try {
+        const res = await fetch(`${API_BASE_URL}/community/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+        const json = await res.json();
+        if (json.success) {
+          socketRef.current?.emit('send_message', {
+            community_id: community._id,
+            text: text.trim() || pendingFile.name,
+            fileUrl: json.fileUrl,
+            parentMessageId: replyTo?._id || null,
+            mentions: selectedMentions,
+            token,
+          });
+        } else {
+          alert(json.message || 'Upload failed');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Upload failed. Please try again.');
+      } finally {
+        setUploading(false);
+        setUploadProgress(null);
+        setPendingFile(null);
+        if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+        setPendingFilePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    } else {
+      // Text-only message
+      socketRef.current?.emit('send_message', {
+        community_id: community._id,
+        text: text.trim(),
+        parentMessageId: replyTo?._id || null,
+        mentions: selectedMentions,
+        token,
+      });
+    }
+
     setText('');
     setReplyTo(null);
     setSelectedMentions([]);
@@ -244,38 +308,35 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
     socketRef.current?.emit('typing', { community_id: community._id, is_typing: false, token });
   };
 
-  // ── File upload ──
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ── Cancel pending file ──
+  const cancelPendingFile = () => {
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+    setPendingFile(null);
+    setPendingFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // ── File selection — preview only, don't upload yet ──
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await fetch(`${API_BASE_URL}/community/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      const json = await res.json();
-      if (json.success) {
-        socketRef.current?.emit('send_message', {
-          community_id: community._id,
-          text: `📎 ${file.name}`,
-          fileUrl: json.fileUrl,
-          token,
-        });
-      } else {
-        alert(json.message || 'Upload failed');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setUploading(false);
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('File is too large. Maximum size is 10MB.');
       if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
     }
+
+    // Revoke previous preview URL
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+
+    // Create preview URL for images
+    const isImage = file.type.startsWith('image/');
+    const previewUrl = isImage ? URL.createObjectURL(file) : null;
+
+    setPendingFile(file);
+    setPendingFilePreview(previewUrl);
   };
 
   // ── Toggle reaction ──
@@ -400,28 +461,34 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
                       : 'bg-white text-gray-900 border border-gray-200 rounded-2xl rounded-bl-sm shadow-sm'
                   }`}
                 >
-                  {msg.text && <p className="leading-relaxed">{renderText(msg.text)}</p>}
+                  {msg.text && !msg.fileUrl && <p className="leading-relaxed">{renderText(msg.text)}</p>}
                   {msg.fileUrl && (
-                    <div className="mt-2">
+                    <div>
                       {msg.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
-                        <img
-                          src={`${SOCKET_URL}${msg.fileUrl}`}
-                          alt="attachment"
-                          className="max-w-[240px] rounded-lg border border-white/20"
-                        />
+                        <div>
+                          {msg.text && (
+                            <p className="text-xs opacity-70 mb-1">{msg.text}</p>
+                          )}
+                          <img
+                            src={`${SOCKET_URL}${msg.fileUrl}`}
+                            alt={msg.text || 'attachment'}
+                            className="max-w-[240px] rounded-lg border border-white/20 cursor-pointer"
+                            onClick={() => window.open(`${SOCKET_URL}${msg.fileUrl}`, '_blank')}
+                          />
+                        </div>
                       ) : (
                         <a
                           href={`${SOCKET_URL}${msg.fileUrl}`}
                           target="_blank"
                           rel="noreferrer"
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                             isOwn
                               ? 'bg-indigo-700 text-white hover:bg-indigo-800'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
-                          <Paperclip className="w-3 h-3" />
-                          Download File
+                          <Paperclip className="w-4 h-4 flex-shrink-0" />
+                          <span className="truncate max-w-[180px]">{msg.text || 'Download File'}</span>
                         </a>
                       )}
                     </div>
@@ -562,12 +629,24 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
         )}
 
         <div className="flex items-center gap-2">
-          <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileUpload} />
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp4,.mp3"
+            onChange={handleFileSelect}
+          />
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 text-gray-400 hover:text-indigo-600 transition-colors bg-gray-50 rounded-full"
+            className={`p-2 transition-colors rounded-full flex-shrink-0 ${
+              uploading
+                ? 'text-indigo-500 bg-indigo-50 animate-pulse cursor-not-allowed'
+                : pendingFile
+                ? 'text-indigo-600 bg-indigo-50'
+                : 'text-gray-400 hover:text-indigo-600 bg-gray-50'
+            }`}
             disabled={uploading}
-            title="Attach file"
+            title="Attach file (images, PDF, Word, etc.)"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -577,29 +656,70 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
               setShowMentions(true);
               setMentionFilter('');
             }}
-            className="p-2 text-gray-400 hover:text-indigo-600 transition-colors bg-gray-50 rounded-full"
+            className="p-2 text-gray-400 hover:text-indigo-600 transition-colors bg-gray-50 rounded-full flex-shrink-0"
             title="Mention someone"
           >
             <AtSign className="w-5 h-5" />
           </button>
-          <input
-            type="text"
-            value={text}
-            onChange={handleTyping}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !showMentions) sendMessage();
-              if (e.key === 'Escape') setShowMentions(false);
-            }}
-            placeholder={uploading ? 'Uploading...' : 'Type a message... (@ to mention)'}
-            disabled={uploading}
-            className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-          />
+
+          {/* File preview chip — shown above text input when file is pending */}
+          {pendingFile ? (
+            <div className="flex-1 flex flex-col gap-1.5">
+              <div className="flex items-center gap-2 px-3 py-1.5 border border-indigo-300 rounded-xl bg-indigo-50">
+                {pendingFilePreview ? (
+                  <img src={pendingFilePreview} alt="preview" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-indigo-200" />
+                ) : (
+                  <div className="w-8 h-8 rounded bg-indigo-100 border border-indigo-200 flex items-center justify-center flex-shrink-0">
+                    <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-indigo-800 truncate">{pendingFile.name}</p>
+                  <p className="text-[10px] text-indigo-500">{(pendingFile.size / 1024).toFixed(1)} KB</p>
+                </div>
+                <button
+                  onClick={cancelPendingFile}
+                  className="p-1 text-indigo-400 hover:text-red-500 transition-colors flex-shrink-0"
+                  title="Remove file"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={text}
+                onChange={handleTyping}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey && !showMentions) sendMessage();
+                  if (e.key === 'Escape') setShowMentions(false);
+                }}
+                placeholder={uploading ? uploadProgress || 'Uploading...' : 'Add a caption (optional)...'}
+                disabled={uploading}
+                autoFocus
+                className="px-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 disabled:bg-gray-100 w-full"
+              />
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={text}
+              onChange={handleTyping}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey && !showMentions) sendMessage();
+                if (e.key === 'Escape') setShowMentions(false);
+              }}
+              placeholder={uploading ? uploadProgress || 'Uploading...' : 'Type a message... (@ to mention)'}
+              disabled={uploading}
+              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+            />
+          )}
+
           <button
             onClick={sendMessage}
-            disabled={(!text.trim() && !uploading) || uploading}
-            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm"
+            disabled={(!text.trim() && !pendingFile) || uploading}
+            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm flex-shrink-0"
           >
-            Send
+            {uploading ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>

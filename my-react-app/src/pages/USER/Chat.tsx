@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
-import { Users, MessageSquare } from 'lucide-react';
+import { Users, MessageSquare, Paperclip } from 'lucide-react';
 
 const API = API_BASE_URL;
 const TOKEN_KEY = 'plpg_access_token';
@@ -38,6 +38,7 @@ interface Message {
   senderId: string;
   receiverId: string;
   text: string;
+  fileUrl?: string;
   read: boolean;
   createdAt: string;
 }
@@ -68,8 +69,14 @@ const Chat: React.FC = () => {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
   const [myId, setMyId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -129,26 +136,106 @@ const Chat: React.FC = () => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [selected, activeTab, loadConversation]);
 
+  // ── Auto-scroll on new messages ──
+  const scrollToBottom = (smooth = true) => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
+  };
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const timer = setTimeout(() => scrollToBottom(true), 50);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!text.trim() || !selected || sending) return;
+    const hasText = !!text.trim();
+    const hasFile = !!pendingFile;
+    if ((!hasText && !hasFile) || !selected || sending || uploading) return;
+
     setSending(true);
-    try {
-      const res = await apiFetch('/messages/send', {
-        method: 'POST',
-        body: JSON.stringify({ receiverId: selected._id, text: text.trim() }),
-      });
-      setMessages(prev => [...prev, res.data]);
-      setText('');
-      loadContacts();
-    } catch (e) {
-      console.error('Send failed', e);
-    } finally {
-      setSending(false);
+
+    if (hasFile && pendingFile) {
+      setUploading(true);
+      setUploadProgress(`Sending ${pendingFile.name}...`);
+      const formData = new FormData();
+      formData.append('file', pendingFile);
+
+      try {
+        const res = await fetch(`${API_BASE_URL}/community/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${getToken()}` },
+          body: formData,
+        });
+        const json = await res.json();
+        if (json.success) {
+          const msgRes = await apiFetch('/messages/send', {
+            method: 'POST',
+            body: JSON.stringify({ 
+              receiverId: selected._id, 
+              text: text.trim() || `📎 ${pendingFile.name}`, 
+              fileUrl: json.fileUrl 
+            }),
+          });
+          setMessages(prev => [...prev, msgRes.data]);
+          loadContacts();
+        } else {
+          alert(json.message || 'Upload failed');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Upload failed. Please try again.');
+      } finally {
+        setUploading(false);
+        setUploadProgress(null);
+        setPendingFile(null);
+        if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+        setPendingFilePreview(null);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    } else {
+      // Text-only message
+      try {
+        const res = await apiFetch('/messages/send', {
+          method: 'POST',
+          body: JSON.stringify({ receiverId: selected._id, text: text.trim() }),
+        });
+        setMessages(prev => [...prev, res.data]);
+        loadContacts();
+      } catch (e) {
+        console.error('Send failed', e);
+      }
     }
+
+    setText('');
+    setSending(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selected) return;
+
+    const maxSize = 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      alert('File is too large. Maximum size is 10MB.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+
+    const isImage = file.type.startsWith('image/');
+    const previewUrl = isImage ? URL.createObjectURL(file) : null;
+
+    setPendingFile(file);
+    setPendingFilePreview(previewUrl);
+  };
+
+  const cancelPendingFile = () => {
+    if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+    setPendingFile(null);
+    setPendingFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const deleteMessage = async (msgId: string) => {
@@ -368,7 +455,7 @@ const Chat: React.FC = () => {
                     </div>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
+                  <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
                     {loading && <p className="text-center text-sm text-gray-400">Loading...</p>}
                     {!loading && messages.length === 0 && (
                       <div className="text-center text-gray-400 mt-10">
@@ -382,7 +469,35 @@ const Chat: React.FC = () => {
                         <div key={msg._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}>
                           <div className="max-w-xs lg:max-w-md">
                             <div className={`px-4 py-2 rounded-2xl text-sm ${isOwn ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'}`}>
-                              {msg.text}
+                              {msg.text && !msg.fileUrl && <p className="leading-relaxed">{msg.text}</p>}
+                              {msg.fileUrl && (
+                                <div>
+                                  {msg.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                                    <div>
+                                      {msg.text && <p className="text-xs opacity-80 mb-1.5">{msg.text}</p>}
+                                      <img
+                                        src={`${API_BASE_URL === '/api' ? 'http://localhost:5000' : API_BASE_URL.replace('/api', '')}${msg.fileUrl}`}
+                                        alt="attachment"
+                                        className="max-w-[200px] rounded-lg border border-white/20"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <a
+                                      href={`${API_BASE_URL === '/api' ? 'http://localhost:5000' : API_BASE_URL.replace('/api', '')}${msg.fileUrl}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                                        isOwn
+                                          ? 'bg-indigo-700 text-white hover:bg-indigo-800'
+                                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                      }`}
+                                    >
+                                      <Paperclip className="w-3 h-3" />
+                                      {msg.text || 'Download File'}
+                                    </a>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <div className={`flex items-center gap-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                               <span className="text-xs text-gray-400">{formatTime(msg.createdAt)}</span>
@@ -401,21 +516,74 @@ const Chat: React.FC = () => {
 
                   <div className="p-4 border-t border-gray-200 bg-white">
                     <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={text}
-                        onChange={e => setText(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                        placeholder={`Message ${selected.firstName}...`}
-                        className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50"
-                        maxLength={2000}
-                      />
+                      <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp4,.mp3" onChange={handleFileSelect} />
                       <button
-                        onClick={sendMessage}
-                        disabled={!text.trim() || sending}
-                        className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`p-2 transition-colors rounded-full flex-shrink-0 ${
+                          uploading
+                            ? 'text-indigo-500 bg-indigo-50 animate-pulse cursor-not-allowed'
+                            : pendingFile
+                            ? 'text-indigo-600 bg-indigo-50'
+                            : 'text-gray-400 hover:text-indigo-600 bg-gray-50'
+                        }`}
+                        disabled={uploading}
+                        title="Attach file"
                       >
-                        {sending ? '...' : 'Send'}
+                        <Paperclip className="w-5 h-5" />
+                      </button>
+
+                      {pendingFile ? (
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <div className="flex items-center gap-2 px-3 py-1.5 border border-indigo-300 rounded-xl bg-indigo-50">
+                            {pendingFilePreview ? (
+                              <img src={pendingFilePreview} alt="preview" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-indigo-200" />
+                            ) : (
+                              <div className="w-8 h-8 rounded bg-indigo-100 border border-indigo-200 flex items-center justify-center flex-shrink-0">
+                                <Paperclip className="w-3.5 h-3.5 text-indigo-500" />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-indigo-800 truncate">{pendingFile.name}</p>
+                              <p className="text-[10px] text-indigo-500">{(pendingFile.size / 1024).toFixed(1)} KB</p>
+                            </div>
+                            <button
+                              onClick={cancelPendingFile}
+                              className="p-1 text-indigo-400 hover:text-red-500 transition-colors flex-shrink-0"
+                              title="Remove file"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <input
+                            type="text"
+                            value={text}
+                            onChange={e => setText(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                            placeholder={uploading ? uploadProgress || 'Uploading...' : 'Add a caption (optional)...'}
+                            disabled={uploading}
+                            autoFocus
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 disabled:bg-gray-100 w-full"
+                          />
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={text}
+                          onChange={e => setText(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                          placeholder={uploading ? uploadProgress || 'Uploading...' : `Message ${selected.firstName}...`}
+                          disabled={uploading}
+                          className="flex-1 px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400"
+                          maxLength={2000}
+                        />
+                      )}
+
+                      <button 
+                        onClick={sendMessage}
+                        disabled={(!text.trim() && !pendingFile) || sending || uploading}
+                        className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-50 flex-shrink-0"
+                      >
+                        {uploading ? 'Sending...' : 'Send'}
                       </button>
                     </div>
                   </div>
