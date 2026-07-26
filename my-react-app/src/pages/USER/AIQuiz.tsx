@@ -649,22 +649,22 @@ const ActiveSession: React.FC<{
       {feedback && <FeedbackPanel feedback={feedback} />}
 
       <div className="flex flex-col sm:flex-row gap-3 justify-end">
-        {selectedAnswer && !reachedTarget && (
+        {!reachedTarget && (
           <button
             onClick={onNext}
-            disabled={loadingNext || loadingFinish}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
+            disabled={!selectedAnswer || loadingNext || loadingFinish}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loadingNext
               ? "Generating next question..."
               : "Next question"}
           </button>
         )}
-        {selectedAnswer && reachedTarget && (
+        {reachedTarget && (
           <button
             onClick={onFinish}
-            disabled={loadingFinish}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
+            disabled={!selectedAnswer || loadingFinish}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loadingFinish ? "Wrapping up..." : "Complete quiz"}
           </button>
