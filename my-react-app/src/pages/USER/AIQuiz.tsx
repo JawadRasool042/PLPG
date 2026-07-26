@@ -80,6 +80,7 @@ const AIQuiz: React.FC = () => {
 
   const questionStartedAt = useRef<number>(Date.now());
   const finishingRef = useRef(false);
+  const prefetchPromiseRef = useRef<Promise<any> | null>(null);
 
   useEffect(() => {
     if (defaultTopic && !topic) {
@@ -129,6 +130,7 @@ const AIQuiz: React.FC = () => {
     setStats({ correct: 0, total: 0 });
     setSummary(null);
     finishingRef.current = false;
+    prefetchPromiseRef.current = null;
   };
 
   const handleStart = async (override?: { difficulty?: AIQuizDifficulty }) => {
@@ -152,6 +154,13 @@ const AIQuiz: React.FC = () => {
       setSessionId(data.session_id);
       setQuestionIndex(data.question_index);
       setQuestion(data.question);
+      
+      // Speculatively prefetch Q2
+      if (1 < targetCount) {
+        prefetchPromiseRef.current = requestNextAIQuestion({ sessionId: data.session_id }).catch((err) => {
+          return Promise.reject(err);
+        });
+      }
     } catch (err: any) {
       setError(err.message || "Failed to start AI quiz");
     } finally {
@@ -206,12 +215,28 @@ const AIQuiz: React.FC = () => {
     try {
       setError(null);
       setLoadingState("next");
-      const data = await requestNextAIQuestion({ sessionId });
+      
+      let data;
+      if (prefetchPromiseRef.current) {
+        data = await prefetchPromiseRef.current;
+        prefetchPromiseRef.current = null;
+      } else {
+        data = await requestNextAIQuestion({ sessionId });
+      }
+
       setQuestion(data.question);
       setQuestionIndex(data.question_index);
       setSelectedAnswer(null);
       setFeedback(null);
+
+      // Speculatively prefetch Q(N+1)
+      if (stats.total + 1 < targetCount) {
+        prefetchPromiseRef.current = requestNextAIQuestion({ sessionId }).catch((err) => {
+          return Promise.reject(err);
+        });
+      }
     } catch (err: any) {
+      prefetchPromiseRef.current = null;
       if (isQuestionLimitReachedError(err)) {
         setError(null);
         await handleFinish();
