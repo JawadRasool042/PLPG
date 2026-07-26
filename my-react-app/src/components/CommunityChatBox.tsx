@@ -173,7 +173,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
       );
     });
 
-    s.on('read_receipt', (data: { user_id: string; community_id: string }) => {
+    s.on('read_receipt', (_data: { user_id: string; community_id: string }) => {
       // Could update read indicators here if needed
     });
 

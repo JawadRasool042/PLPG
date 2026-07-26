@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
-import { Users, MessageSquare, Paperclip } from 'lucide-react';
+import { Users, MessageSquare, Paperclip, X } from 'lucide-react';
 
 const API = API_BASE_URL;
 const TOKEN_KEY = 'plpg_access_token';
