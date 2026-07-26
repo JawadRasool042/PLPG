@@ -833,30 +833,24 @@ def finish_session():
 
 
 def _safe_remediation_hook(user_id: str, attempt_id: str, *, score: float | None = None) -> dict:
+    """Return basic remediation status without triggering the synchronous LLM generation."""
     try:
-        from services.remediation_service import process_attempt_after_scoring
-        return process_attempt_after_scoring(user_id, str(attempt_id))
+        from services.remediation_service import PASSING_SCORE, is_passing
+        passed = True if score is None else is_passing(score)
+        
+        if not passed:
+            return {
+                "passed": False,
+                "passingScore": PASSING_SCORE,
+                "needsRemediation": True,
+                "canContinue": False,
+                "score": score,
+                "attemptId": str(attempt_id),
+            }
+        return {"passed": True, "needsRemediation": False, "canContinue": True}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Remediation hook failed for AI quiz user %s: %s", user_id, exc)
-        try:
-            from services.remediation_service import PASSING_SCORE, is_passing
-            if score is not None and not is_passing(score):
-                return {
-                    "passed": False,
-                    "passingScore": PASSING_SCORE,
-                    "needsRemediation": True,
-                    "canContinue": False,
-                    "score": score,
-                    "attemptId": str(attempt_id),
-                }
-        except Exception:  # noqa: BLE001
-            pass
-        return {
-            "passed": True,
-            "passingScore": 70,
-            "needsRemediation": False,
-            "canContinue": True,
-        }
+        logger.warning("Remediation hook check failed: %s", exc)
+        return {"passed": True, "needsRemediation": False, "canContinue": True}
 
 
 @ai_quiz_bp.route("/session/<session_id>", methods=["GET"])
