@@ -446,10 +446,10 @@ const QuizAttemptPage: React.FC = () => {
     }
 
     if (unanswered.length > 0) {
-      const confirm = window.confirm(
-        `You haven't answered ${unanswered.length} question(s). Do you want to submit anyway?`
+      window.alert(
+        `You must answer all ${quiz.totalQuestions} questions before submitting. You have ${unanswered.length} question(s) left.`
       );
-      if (!confirm) return;
+      return;
     }
 
     try {

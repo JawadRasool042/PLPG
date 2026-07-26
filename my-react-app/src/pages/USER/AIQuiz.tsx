@@ -624,13 +624,6 @@ const ActiveSession: React.FC<{
       {feedback && <FeedbackPanel feedback={feedback} />}
 
       <div className="flex flex-col sm:flex-row gap-3 justify-end">
-        <button
-          onClick={onFinish}
-          disabled={loadingFinish || loadingAnswer}
-          className="px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
-        >
-          {loadingFinish ? "Wrapping up..." : "Finish session"}
-        </button>
         {selectedAnswer && !reachedTarget && (
           <button
             onClick={onNext}
