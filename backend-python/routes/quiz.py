@@ -850,12 +850,32 @@ def submit_quiz(quiz_id):
             response_payload['adaptive_recommendation'] = adaptive_recommendation
 
         try:
-            from services.remediation_service import process_attempt_after_scoring
-            response_payload['remediation'] = process_attempt_after_scoring(
-                user_id, str(attempt['_id'])
-            )
+            from services.remediation_service import PASSING_SCORE, is_passing
+            score = attempt.get('score', 0)
+            passed = is_passing(score)
+            
+            if not passed:
+                response_payload['remediation'] = {
+                    "passed": False,
+                    "passingScore": PASSING_SCORE,
+                    "needsRemediation": True,
+                    "canContinue": False,
+                    "score": score,
+                    "attemptId": str(attempt['_id']),
+                }
+            else:
+                response_payload['remediation'] = {
+                    "passed": True, 
+                    "needsRemediation": False, 
+                    "canContinue": True
+                }
         except Exception as rem_exc:  # noqa: BLE001
-            logger.warning("Remediation hook failed for user %s: %s", user_id, rem_exc)
+            logger.warning("Remediation hook check failed: %s", rem_exc)
+            response_payload['remediation'] = {
+                "passed": True, 
+                "needsRemediation": False, 
+                "canContinue": True
+            }
 
         return jsonify(response_payload), 200
         
