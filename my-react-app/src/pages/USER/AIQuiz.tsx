@@ -168,53 +168,42 @@ const AIQuiz: React.FC = () => {
     }
   };
 
-  const handleAnswerSelect = async (letter: string) => {
-    if (!sessionId || !question || loadingState === "answering" || selectedAnswer) return;
+  const handleAnswerSelect = (letter: string) => {
+    if (!sessionId || !question || loadingState === "next" || loadingState === "finishing") return;
     setSelectedAnswer(letter);
-    setError(null);
-    try {
-      setLoadingState("answering");
-      const elapsed = Date.now() - questionStartedAt.current;
-      const data = await submitAIAnswer({
-        sessionId,
-        questionIndex,
-        answer: letter,
-        timeSpentMs: elapsed,
-      });
-      if (typeof data.question_index === "number") {
-        setQuestionIndex(data.question_index);
-      }
-      // Keep answers hidden during the active session; reveal in end-of-quiz summary.
-      setFeedback(null);
-      setStats((prev) => ({
-        correct: prev.correct + (data.feedback.is_correct ? 1 : 0),
-        total: prev.total + 1,
-      }));
-
-      const totalAnswered = data.total_answered ?? stats.total + 1;
-      const atLimit =
-        Boolean(data.limit_reached) || totalAnswered >= targetCount;
-
-      if (atLimit) {
-        await handleFinish();
-      }
-    } catch (err: any) {
-      setError(err.message || "Failed to submit answer");
-      setSelectedAnswer(null);
-    } finally {
-      setLoadingState("idle");
-    }
   };
 
   const handleNext = async () => {
-    if (!sessionId || loadingState === "answering" || loadingState === "next") return;
-    if (stats.total >= targetCount) {
-      void handleFinish();
-      return;
-    }
+    if (!sessionId || !selectedAnswer || loadingState === "next" || loadingState === "finishing") return;
     try {
       setError(null);
       setLoadingState("next");
+      
+      const elapsed = Date.now() - questionStartedAt.current;
+      const answerData = await submitAIAnswer({
+        sessionId,
+        questionIndex,
+        answer: selectedAnswer,
+        timeSpentMs: elapsed,
+      });
+
+      if (typeof answerData.question_index === "number") {
+        setQuestionIndex(answerData.question_index);
+      }
+      
+      const newStats = {
+        correct: stats.correct + (answerData.feedback.is_correct ? 1 : 0),
+        total: stats.total + 1,
+      };
+      setStats(newStats);
+
+      const totalAnswered = answerData.total_answered ?? newStats.total;
+      const atLimit = Boolean(answerData.limit_reached) || totalAnswered >= targetCount;
+
+      if (atLimit) {
+        await handleFinish(true);
+        return;
+      }
       
       let data;
       if (prefetchPromiseRef.current) {
@@ -230,7 +219,7 @@ const AIQuiz: React.FC = () => {
       setFeedback(null);
 
       // Speculatively prefetch Q(N+1)
-      if (stats.total + 1 < targetCount) {
+      if (newStats.total + 1 < targetCount) {
         prefetchPromiseRef.current = requestNextAIQuestion({ sessionId }).catch((err) => {
           return Promise.reject(err);
         });
@@ -239,22 +228,33 @@ const AIQuiz: React.FC = () => {
       prefetchPromiseRef.current = null;
       if (isQuestionLimitReachedError(err)) {
         setError(null);
-        await handleFinish();
+        await handleFinish(true);
         return;
       }
-      setError(err.message || "Failed to fetch next question");
+      setError(err.message || "Failed to submit answer or fetch next question");
     } finally {
       setLoadingState("idle");
     }
   };
 
-  const handleFinish = async () => {
+  const handleFinish = async (skipSubmit = false) => {
     if (!sessionId || finishingRef.current) return;
     finishingRef.current = true;
     setError(null);
     const activeSessionId = sessionId;
     try {
       setLoadingState("finishing");
+
+      if (!skipSubmit && selectedAnswer) {
+        const elapsed = Date.now() - questionStartedAt.current;
+        await submitAIAnswer({
+          sessionId: activeSessionId,
+          questionIndex,
+          answer: selectedAnswer,
+          timeSpentMs: elapsed,
+        });
+      }
+
       const data = await finishAIQuiz(activeSessionId);
       setSessionId(null);
       setQuestion(null);
@@ -616,7 +616,7 @@ const ActiveSession: React.FC<{
               <button
                 key={letter}
                 onClick={() => onAnswerSelect(letter)}
-                disabled={!!selectedAnswer || loadingAnswer}
+                disabled={loadingNext || loadingFinish}
                 className={`${base} ${style} disabled:cursor-default`}
               >
                 <div className="flex items-center gap-3">
@@ -652,7 +652,7 @@ const ActiveSession: React.FC<{
         {selectedAnswer && !reachedTarget && (
           <button
             onClick={onNext}
-            disabled={loadingNext || loadingAnswer}
+            disabled={loadingNext || loadingFinish}
             className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50"
           >
             {loadingNext
