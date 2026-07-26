@@ -34,6 +34,18 @@ const QuizResults: React.FC = () => {
         locationState.remediation ?? null,
     );
     const [remediationLoading, setRemediationLoading] = useState(false);
+    const [loadingStep, setLoadingStep] = useState(0);
+    const loadingSteps = [
+        "Analyzing your quiz..."
+    ];
+
+    useEffect(() => {
+        if (!remediationLoading) return;
+        const interval = setInterval(() => {
+            setLoadingStep(s => Math.min(s + 1, loadingSteps.length - 1));
+        }, 2500);
+        return () => clearInterval(interval);
+    }, [remediationLoading, loadingSteps.length]);
 
     useEffect(() => {
         if (!isAuthenticated || !attemptId) return;
@@ -110,7 +122,9 @@ const QuizResults: React.FC = () => {
                 <div className="max-w-6xl mx-auto px-4">
                     <div className="text-center py-12">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-                        <p className="mt-4 text-slate-600">Loading results...</p>
+                        <p className="mt-4 text-slate-600">
+                            {remediationLoading ? loadingSteps[loadingStep] : "Loading results..."}
+                        </p>
                     </div>
                 </div>
             </div>
@@ -198,11 +212,8 @@ const QuizResults: React.FC = () => {
                         </p>
                         {remediationLoading ? (
                             <div className="flex items-center space-x-3 text-amber-700">
-                                <svg className="animate-spin h-5 w-5 text-amber-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                <span className="text-sm font-medium">Analyzing your quiz...</span>
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-amber-700"></div>
+                                <span className="font-medium animate-pulse">{loadingSteps[loadingStep]}</span>
                             </div>
                         ) : (
                             <button
