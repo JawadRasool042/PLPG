@@ -2,6 +2,8 @@
 flask
 flask-cors
 gunicorn
+flask-socketio
+eventlet
 
 # Database
 pymongo

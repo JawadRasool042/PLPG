@@ -108,6 +108,9 @@ def chat_completions(
             temperature=temperature,
             response_format=response_format,
         )
+        import json
+        with open("payload_dump.json", "w") as f:
+            json.dump(payload, f)
         try:
             response = requests.post(OPENAI_CHAT_URL, headers=headers, json=payload, timeout=timeout)
         except requests.RequestException as exc:

@@ -78,8 +78,16 @@ _CACHE: "OrderedDict[str, Tuple[float, str, str]]" = OrderedDict()
 _CACHE_LOCK = Lock()
 
 
-def _cache_key(message: str, user_interest: Optional[str]) -> str:
-    return f"{(user_interest or '').lower()}::{message.strip().lower()}"
+def _cache_key(message: str, user_interest: Optional[str], history: Optional[List[Dict[str, Any]]] = None) -> str:
+    base = f"{(user_interest or '').lower()}::{message.strip().lower()}"
+    if not history:
+        return base
+    
+    import hashlib
+    # Hash the recent history to ensure language context is captured in the cache key
+    recent = "".join(f"{msg.get('role', '')}:{msg.get('text', '')}" for msg in history[-4:])
+    h = hashlib.md5(recent.encode("utf-8")).hexdigest()[:8]
+    return f"{base}::hist_{h}"
 
 
 def _cache_get(key: str) -> Optional[Tuple[str, str]]:
@@ -107,24 +115,16 @@ def _cache_put(key: str, source: str, text: str) -> None:
 # Prompt + persona
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an AI Learning Assistant for PLPG (Personalized Learning Path Generator), an educational platform that helps students discover their interests and learn tech skills.
+SYSTEM_PROMPT = """You are an AI Learning Assistant. Your primary goal is to help students learn tech topics like AI/ML, Web Development, Data Science, etc.
 
-Your role:
-- Help students with learning tech topics: AI/ML, Web Development, Cybersecurity, Data Science, Mobile Development, Cloud Computing, Game Development, Programming/Coding
-- Provide clear, concise explanations of concepts
-- Suggest learning resources, roadmaps, and projects
-- Answer quiz-related questions and explain concepts
-- Give career guidance in tech fields
-- Be encouraging and supportive
+Language Agent Directives:
+- Detect the requested language from user input (this could be literally any language in the world).
+- Respond entirely in the requested language.
+- CRITICAL: You support ALL languages (Arabic, French, Spanish, Punjabi, etc.). You must NEVER restrict yourself to English or Urdu. You must speak the exact language the user requests.
 
 Guidelines:
-- Match the user's tone. If they say "hi", greet them naturally — DO NOT dump a roadmap unless asked.
-- Keep responses focused and educational
-- Use bullet points and structure when listing things, but use plain prose for short answers
-- If asked about non-tech topics, politely redirect to learning
-- Personalize responses based on the student's interest if provided
-- Respond in the same language the student uses (Urdu/English)
-- Keep responses concise (max 300 words unless detailed explanation is needed)
+- Provide clear, concise explanations of concepts.
+- Keep responses focused and educational.
 """
 
 
@@ -377,7 +377,7 @@ def _handle_chat(message: str, user_interest: Optional[str], history: List[Dict[
     if len(message) > 1000:
         return {"success": False, "message": "Message too long (max 1000 characters)"}, 400
 
-    cache_key = _cache_key(message, user_interest)
+    cache_key = _cache_key(message, user_interest, history)
     is_greeting = bool(_GREETING_RE.match(message) or _THANKS_RE.match(message) or _BYE_RE.match(message))
     if not is_greeting:
         cached = _cache_get(cache_key)

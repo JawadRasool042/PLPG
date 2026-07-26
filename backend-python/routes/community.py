@@ -1,304 +1,259 @@
 """
-Community Routes
-================
-Interest-based and user-created communities where students can chat.
+Community REST API routes.
 
-Collections used:
-  communities          – community documents
-  community_messages   – messages posted inside a community
+Provides endpoints for:
+- Listing / joining / leaving communities
+- Fetching messages with pagination and search
+- Uploading and serving file attachments
+- Listing members (for @mention autocomplete)
 """
 
+import os
 from datetime import datetime
-from flask import Blueprint, request, jsonify, g
+from flask import Blueprint, request, jsonify, g, send_from_directory
+from werkzeug.utils import secure_filename
 from bson import ObjectId
 from database import get_collection
 from middleware.auth import authenticate_token
 
 community_bp = Blueprint('community', __name__)
 
-# ── helpers ────────────────────────────────────────────────────────────────
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-INTEREST_DOMAINS = [
-    "Coding", "Web Development", "Game Development", "Cybersecurity",
-    "Data Science", "Mobile Development", "Cloud Computing",
-    "AI & Machine Learning", "Physical Games / Sports",
-]
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'txt', 'zip', 'mp4', 'mp3'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
-def _serialize(doc):
+
+def serialize(doc):
+    """Serialize a MongoDB document for JSON response."""
     if doc is None:
         return None
-    out = dict(doc)
-    out['_id'] = str(out['_id'])
-    for k, v in out.items():
+    doc['_id'] = str(doc['_id'])
+    for k, v in doc.items():
         if isinstance(v, ObjectId):
-            out[k] = str(v)
+            doc[k] = str(v)
         elif isinstance(v, datetime):
-            out[k] = v.isoformat()
-    return out
+            doc[k] = v.isoformat()
+    return doc
 
 
-def _ensure_interest_communities():
-    """Auto-create one community per interest domain if not already present."""
-    col = get_collection('communities')
-    for domain in INTEREST_DOMAINS:
-        col.update_one(
-            {'slug': _slugify(domain), 'type': 'interest'},
-            {'$setOnInsert': {
-                'name': domain,
-                'slug': _slugify(domain),
-                'description': f'Official community for {domain} learners',
-                'type': 'interest',
-                'interest': domain,
-                'creatorId': None,
-                'members': [],
-                'memberCount': 0,
-                'createdAt': datetime.utcnow(),
-            }},
-            upsert=True,
-        )
+def _safe_object_id(id_str):
+    """Safely convert string to ObjectId, returns None on failure."""
+    try:
+        return ObjectId(id_str) if ObjectId.is_valid(id_str) else None
+    except Exception:
+        return None
 
 
-def _slugify(text: str) -> str:
-    import re
-    return re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+# ============================================
+# Community CRUD
+# ============================================
 
-
-# ── GET /api/community/  ────────────────────────────────────────────────────
 @community_bp.route('/', methods=['GET'])
 @authenticate_token
-def list_communities():
-    """Return all communities (interest-based + user-created)."""
-    _ensure_interest_communities()
-    me = g.user['id']
+def get_communities():
+    """List all available communities with member counts."""
     col = get_collection('communities')
-    docs = list(col.find({}).sort([('type', 1), ('name', 1)]))
+    members_col = get_collection('community_members')
+
+    communities = list(col.find({}))
     result = []
-    for d in docs:
-        s = _serialize(d)
-        s['isMember'] = me in (d.get('members') or [])
-        s['isCreator'] = str(d.get('creatorId') or '') == me
-        result.append(s)
+    for c in communities:
+        c_id = str(c['_id'])
+        member_count = members_col.count_documents({'community_id': c_id})
+        doc = serialize(c)
+        doc['memberCount'] = member_count
+        result.append(doc)
+
     return jsonify({'success': True, 'data': result})
 
 
-# ── POST /api/community/  ───────────────────────────────────────────────────
-@community_bp.route('/', methods=['POST'])
+@community_bp.route('/my', methods=['GET'])
 @authenticate_token
-def create_community():
-    """Create a custom community."""
-    me = g.user['id']
-    data = request.get_json() or {}
-    name = (data.get('name') or '').strip()
-    description = (data.get('description') or '').strip()
-    interest = (data.get('interest') or '').strip()
+def get_my_communities():
+    """List communities the current user has joined."""
+    user_id = g.user['id']
+    members_col = get_collection('community_members')
+    comms_col = get_collection('communities')
 
-    if not name:
-        return jsonify({'success': False, 'message': 'name is required'}), 400
-    if len(name) > 80:
-        return jsonify({'success': False, 'message': 'name too long (max 80 chars)'}), 400
+    my_memberships = list(members_col.find({'user_id': user_id}))
+    community_ids = []
+    for m in my_memberships:
+        oid = _safe_object_id(m['community_id'])
+        if oid:
+            community_ids.append(oid)
 
-    col = get_collection('communities')
-    slug = _slugify(name)
-
-    # prevent duplicate slugs
-    if col.find_one({'slug': slug}):
-        slug = f"{slug}-{str(ObjectId())[:6]}"
-
-    doc = {
-        'name': name,
-        'slug': slug,
-        'description': description,
-        'type': 'custom',
-        'interest': interest or None,
-        'creatorId': me,
-        'members': [me],
-        'memberCount': 1,
-        'createdAt': datetime.utcnow(),
-    }
-    result = col.insert_one(doc)
-    doc['_id'] = str(result.inserted_id)
-    doc['createdAt'] = doc['createdAt'].isoformat()
-    doc['isMember'] = True
-    doc['isCreator'] = True
-    return jsonify({'success': True, 'data': doc}), 201
+    communities = list(comms_col.find({'_id': {'$in': community_ids}}))
+    return jsonify({'success': True, 'data': [serialize(c) for c in communities]})
 
 
-# ── DELETE /api/community/<id>  ─────────────────────────────────────────────
-@community_bp.route('/<community_id>', methods=['DELETE'])
-@authenticate_token
-def delete_community(community_id):
-    """Delete a custom community (creator only)."""
-    me = g.user['id']
-    col = get_collection('communities')
-    try:
-        doc = col.find_one({'_id': ObjectId(community_id)})
-    except Exception:
-        return jsonify({'success': False, 'message': 'Invalid id'}), 400
-
-    if not doc:
-        return jsonify({'success': False, 'message': 'Community not found'}), 404
-    if doc.get('type') == 'interest':
-        return jsonify({'success': False, 'message': 'Cannot delete interest communities'}), 403
-    if str(doc.get('creatorId') or '') != me:
-        return jsonify({'success': False, 'message': 'Only the creator can delete this community'}), 403
-
-    col.delete_one({'_id': ObjectId(community_id)})
-    get_collection('community_messages').delete_many({'communityId': community_id})
-    return jsonify({'success': True, 'message': 'Community deleted'})
-
-
-# ── POST /api/community/<id>/join  ──────────────────────────────────────────
 @community_bp.route('/<community_id>/join', methods=['POST'])
 @authenticate_token
 def join_community(community_id):
-    me = g.user['id']
-    col = get_collection('communities')
-    try:
-        doc = col.find_one({'_id': ObjectId(community_id)})
-    except Exception:
-        return jsonify({'success': False, 'message': 'Invalid id'}), 400
-    if not doc:
+    """Join a community."""
+    user_id = g.user['id']
+    comms_col = get_collection('communities')
+    members_col = get_collection('community_members')
+
+    # Verify community exists
+    comm = comms_col.find_one({'_id': _safe_object_id(community_id)})
+    if not comm:
         return jsonify({'success': False, 'message': 'Community not found'}), 404
 
-    if me not in (doc.get('members') or []):
-        col.update_one(
-            {'_id': ObjectId(community_id)},
-            {'$addToSet': {'members': me}, '$inc': {'memberCount': 1}},
-        )
-    return jsonify({'success': True, 'message': 'Joined'})
+    existing = members_col.find_one({'user_id': user_id, 'community_id': community_id})
+    if not existing:
+        members_col.insert_one({
+            'user_id': user_id,
+            'community_id': community_id,
+            'joined_at': datetime.utcnow(),
+            'last_read_at': datetime.utcnow()
+        })
+    return jsonify({'success': True, 'message': 'Joined successfully'})
 
 
-# ── POST /api/community/<id>/leave  ─────────────────────────────────────────
 @community_bp.route('/<community_id>/leave', methods=['POST'])
 @authenticate_token
 def leave_community(community_id):
-    me = g.user['id']
-    col = get_collection('communities')
-    try:
-        doc = col.find_one({'_id': ObjectId(community_id)})
-    except Exception:
-        return jsonify({'success': False, 'message': 'Invalid id'}), 400
-    if not doc:
-        return jsonify({'success': False, 'message': 'Community not found'}), 404
-    if str(doc.get('creatorId') or '') == me and doc.get('type') == 'custom':
-        return jsonify({'success': False, 'message': 'Creator cannot leave. Delete the community instead.'}), 400
-
-    col.update_one(
-        {'_id': ObjectId(community_id)},
-        {'$pull': {'members': me}, '$inc': {'memberCount': -1}},
-    )
-    return jsonify({'success': True, 'message': 'Left community'})
+    """Leave a community."""
+    user_id = g.user['id']
+    members_col = get_collection('community_members')
+    members_col.delete_one({'user_id': user_id, 'community_id': community_id})
+    return jsonify({'success': True, 'message': 'Left successfully'})
 
 
-# ── GET /api/community/<id>/messages  ───────────────────────────────────────
+# ============================================
+# Messages
+# ============================================
+
 @community_bp.route('/<community_id>/messages', methods=['GET'])
 @authenticate_token
-def get_community_messages(community_id):
-    limit = min(int(request.args.get('limit', 100)), 200)
+def get_messages(community_id):
+    """
+    Fetch messages for a community with pagination and optional search.
+    
+    Query params:
+        search  — text filter (regex, case-insensitive)
+        skip    — number of messages to skip (default 0)
+        limit   — max messages to return (default 50, max 100)
+    """
+    user_id = g.user['id']
+    search_query = request.args.get('search', '').strip()
+    skip = max(0, int(request.args.get('skip', 0)))
+    limit = min(100, max(1, int(request.args.get('limit', 50))))
+
     msgs_col = get_collection('community_messages')
-    msgs = list(
-        msgs_col.find({'communityId': community_id})
-        .sort('createdAt', 1)
+    members_col = get_collection('community_members')
+
+    query = {'community_id': community_id, 'deleted': {'$ne': True}}
+    if search_query:
+        query['text'] = {'$regex': search_query, '$options': 'i'}
+
+    total = msgs_col.count_documents(query)
+    messages = list(
+        msgs_col.find(query)
+        .sort('createdAt', -1)
+        .skip(skip)
         .limit(limit)
     )
-    # enrich with sender info
+    messages.reverse()  # Oldest first for UI
+
+    # Enrich messages with sender info
     users_col = get_collection('users')
-    result = []
-    for m in msgs:
-        s = _serialize(m)
-        sender_id = m.get('senderId')
-        if sender_id:
-            try:
-                u = users_col.find_one(
-                    {'_id': ObjectId(sender_id)},
-                    {'firstName': 1, 'lastName': 1, 'email': 1},
-                )
-                if u:
-                    s['senderName'] = f"{u.get('firstName','')} {u.get('lastName','')}".strip() or u.get('email','')
-                    s['senderInitials'] = (
-                        (u.get('firstName','')[:1] + u.get('lastName','')[:1]).upper()
-                        or u.get('email','')[:1].upper()
-                    )
-            except Exception:
-                pass
-        result.append(s)
-    return jsonify({'success': True, 'data': result})
+    for m in messages:
+        sender_oid = _safe_object_id(m.get('sender_id', ''))
+        if sender_oid:
+            sender = users_col.find_one({'_id': sender_oid})
+            if sender:
+                m['sender'] = {
+                    '_id': str(sender['_id']),
+                    'firstName': sender.get('firstName', ''),
+                    'lastName': sender.get('lastName', ''),
+                    'avatar': sender.get('avatar', '')
+                }
 
-
-# ── POST /api/community/<id>/messages  ──────────────────────────────────────
-@community_bp.route('/<community_id>/messages', methods=['POST'])
-@authenticate_token
-def post_community_message(community_id):
-    me = g.user['id']
-    data = request.get_json() or {}
-    text = (data.get('text') or '').strip()
-    if not text:
-        return jsonify({'success': False, 'message': 'text is required'}), 400
-    if len(text) > 2000:
-        return jsonify({'success': False, 'message': 'Message too long'}), 400
-
-    col = get_collection('communities')
-    try:
-        doc = col.find_one({'_id': ObjectId(community_id)})
-    except Exception:
-        return jsonify({'success': False, 'message': 'Invalid id'}), 400
-    if not doc:
-        return jsonify({'success': False, 'message': 'Community not found'}), 404
-    if me not in (doc.get('members') or []):
-        return jsonify({'success': False, 'message': 'Join this community first'}), 403
-
-    msgs_col = get_collection('community_messages')
-    msg = {
-        'communityId': community_id,
-        'senderId': me,
-        'text': text,
-        'createdAt': datetime.utcnow(),
-    }
-    result = msgs_col.insert_one(msg)
-
-    # enrich sender info for immediate response
-    users_col = get_collection('users')
-    sender_name = me
-    sender_initials = 'U'
-    try:
-        u = users_col.find_one({'_id': ObjectId(me)}, {'firstName': 1, 'lastName': 1, 'email': 1})
-        if u:
-            sender_name = f"{u.get('firstName','')} {u.get('lastName','')}".strip() or u.get('email','')
-            sender_initials = (
-                (u.get('firstName','')[:1] + u.get('lastName','')[:1]).upper()
-                or u.get('email','')[:1].upper()
-            )
-    except Exception:
-        pass
+    # Update read receipt
+    members_col.update_one(
+        {'user_id': user_id, 'community_id': community_id},
+        {'$set': {'last_read_at': datetime.utcnow()}}
+    )
 
     return jsonify({
         'success': True,
-        'data': {
-            '_id': str(result.inserted_id),
-            'communityId': community_id,
-            'senderId': me,
-            'senderName': sender_name,
-            'senderInitials': sender_initials,
-            'text': text,
-            'createdAt': datetime.utcnow().isoformat(),
-        }
-    }), 201
+        'data': [serialize(m) for m in messages],
+        'total': total,
+        'skip': skip,
+        'limit': limit,
+        'hasMore': (skip + limit) < total
+    })
 
 
-# ── DELETE /api/community/<cid>/messages/<mid>  ─────────────────────────────
-@community_bp.route('/<community_id>/messages/<message_id>', methods=['DELETE'])
+# ============================================
+# Members (for @mention autocomplete)
+# ============================================
+
+@community_bp.route('/<community_id>/members', methods=['GET'])
 @authenticate_token
-def delete_community_message(community_id, message_id):
-    me = g.user['id']
-    msgs_col = get_collection('community_messages')
-    try:
-        msg = msgs_col.find_one({'_id': ObjectId(message_id)})
-    except Exception:
-        return jsonify({'success': False, 'message': 'Invalid id'}), 400
-    if not msg:
-        return jsonify({'success': False, 'message': 'Message not found'}), 404
-    if str(msg.get('senderId') or '') != me:
-        return jsonify({'success': False, 'message': 'Not authorized'}), 403
+def get_members(community_id):
+    """Get all members of a community for @mention and member list."""
+    members_col = get_collection('community_members')
+    users_col = get_collection('users')
 
-    msgs_col.delete_one({'_id': ObjectId(message_id)})
-    return jsonify({'success': True, 'message': 'Message deleted'})
+    memberships = list(members_col.find({'community_id': community_id}))
+    members = []
+    for m in memberships:
+        user_oid = _safe_object_id(m['user_id'])
+        if not user_oid:
+            continue
+        user = users_col.find_one({'_id': user_oid})
+        if user:
+            members.append({
+                '_id': str(user['_id']),
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
+                'email': user.get('email', ''),
+                'avatar': user.get('avatar', ''),
+                'joinedAt': m.get('joined_at', '').isoformat() if isinstance(m.get('joined_at'), datetime) else ''
+            })
+
+    return jsonify({'success': True, 'data': members})
+
+
+# ============================================
+# File Upload
+# ============================================
+
+@community_bp.route('/upload', methods=['POST'])
+@authenticate_token
+def upload_file():
+    """Upload a file to share in community chat."""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No file part'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'No selected file'}), 400
+
+    # Validate extension
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in ALLOWED_EXTENSIONS:
+        return jsonify({'success': False, 'message': f'File type .{ext} not allowed'}), 400
+
+    filename = secure_filename(file.filename)
+    unique_filename = f"{datetime.utcnow().timestamp()}_{filename}"
+    file_path = os.path.join(UPLOAD_FOLDER, unique_filename)
+    file.save(file_path)
+
+    # Check file size after save
+    if os.path.getsize(file_path) > MAX_FILE_SIZE:
+        os.remove(file_path)
+        return jsonify({'success': False, 'message': 'File too large (max 10MB)'}), 400
+
+    file_url = f"/api/community/files/{unique_filename}"
+    return jsonify({'success': True, 'fileUrl': file_url})
+
+
+@community_bp.route('/files/<filename>', methods=['GET'])
+def get_file(filename):
+    """Serve uploaded files."""
+    return send_from_directory(UPLOAD_FOLDER, filename)

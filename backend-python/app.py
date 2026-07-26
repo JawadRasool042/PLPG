@@ -166,6 +166,10 @@ def create_app(config_name=None):
     # Community routes (interest-based + user-created group chat)
     from routes.community import community_bp
     app.register_blueprint(community_bp, url_prefix='/api/community')
+    
+    # Initialize Socket.IO
+    from socket_events import init_sockets
+    init_sockets(app)
 
     from routes.remediation import remediation_bp
     app.register_blueprint(remediation_bp, url_prefix='/api/remediation')
@@ -402,4 +406,5 @@ if __name__ == "__main__":
     logger.info(f"Debug mode: {debug}")
     
     # use_reloader=False prevents restart issues with sklearn/scipy on Python 3.13
-    app.run(host="0.0.0.0", port=port, debug=debug, use_reloader=False)
+    from socket_events import socketio
+    socketio.run(app, host="0.0.0.0", port=port, debug=debug, use_reloader=False)

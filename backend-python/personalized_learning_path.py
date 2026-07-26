@@ -1225,7 +1225,44 @@ def generate_recommendations(prediction: dict, user_info: dict = None) -> dict:
     )
     roadmap = path_result.get("roadmap") or {}
     careers_detailed = path_result.get("careers_detailed") or []
-    courses = ((roadmap.get("resources") or {}).get("courses") or [])
+    
+    SYSTEM_COURSES = {
+        "AI & Machine Learning": [
+            "Intro to AI", "Python for AI", "Machine Learning", "Neural Networks",
+            "Machine Learning Fundamentals", "Feature Engineering", "Advanced ML",
+            "Advanced Deep Learning", "LLM Engineering", "Production AI Systems"
+        ],
+        "Coding": [
+            "Intro to Programming", "Python Basics", "Data Structures", 
+            "API Development", "System Design", "Advanced Algorithms"
+        ],
+        "Web Development": [
+            "HTML/CSS Fundamentals", "JavaScript Basics", "React Mastery", 
+            "Node.js Backend", "Advanced React Patterns", "Micro Frontends"
+        ],
+        "Mobile Development": [
+            "Mobile UI Basics", "Flutter Intro", "Advanced Flutter", 
+            "Native Modules", "Performance Optimization", "Platform Design"
+        ],
+        "Data Science": [
+            "Statistics Basics", "Python for Data", "Big Data"
+        ],
+        "Cybersecurity": [
+            "Security Fundamentals", "Network Security", "Ethical Hacking", 
+            "Web App Security", "Advanced Exploitation", "Security Architecture"
+        ],
+        "Cloud Computing": [
+            "Cloud Fundamentals", "AWS Basics", "AWS Solutions Architect", 
+            "Docker & Kubernetes", "Multi-Cloud Architecture", "SRE"
+        ],
+        "Game Development": [
+            "Game Dev Basics", "Unity Intro", "Advanced Unity", 
+            "Multiplayer Basics", "Engine Architecture", "AAA Production"
+        ],
+        "Physical Games / Sports": []
+    }
+    
+    courses = SYSTEM_COURSES.get(primary, [])
     projects = roadmap.get("suggested_projects") or []
 
     topic_roadmap = {
