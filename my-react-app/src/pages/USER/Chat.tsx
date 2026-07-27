@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
+import { io, Socket } from 'socket.io-client';
 import { Users, MessageSquare, Paperclip, X } from 'lucide-react';
 
 import { getValidAccessToken } from '../../services/authService';
@@ -73,6 +74,7 @@ const Chat: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingFilePreview, setPendingFilePreview] = useState<string | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [myId, setMyId] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -86,6 +88,29 @@ const Chat: React.FC = () => {
       const payload = JSON.parse(atob(token.split('.')[1]));
       setMyId(payload.id || payload.sub || '');
     } catch {}
+  }, []);
+
+  // Connect to Socket.IO for real-time Direct Messages
+  useEffect(() => {
+    const connectSocket = async () => {
+      const token = await getValidAccessToken();
+      const SOCKET_URL = API_BASE_URL === '/api' ? 'http://localhost:5000' : API_BASE_URL.replace('/api', '');
+      const s = io(SOCKET_URL, { query: { token }, transports: ['websocket', 'polling'] });
+      socketRef.current = s;
+
+      s.on('new_direct_message', (msg: any) => {
+        setMessages(prev => {
+          if (prev.some(m => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+        loadContacts();
+      });
+    };
+    connectSocket();
+
+    return () => {
+      if (socketRef.current) socketRef.current.disconnect();
+    };
   }, []);
 
   const loadContacts = useCallback(async () => {
@@ -131,9 +156,6 @@ const Chat: React.FC = () => {
   useEffect(() => {
     if (activeTab !== 'direct' || !selected) return;
     loadConversation(selected._id);
-
-    pollRef.current = setInterval(() => loadConversation(selected._id), 3000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [selected, activeTab, loadConversation]);
 
   // ── Auto-scroll on new messages ──
@@ -162,9 +184,10 @@ const Chat: React.FC = () => {
       formData.append('file', pendingFile);
 
       try {
+        const freshToken = await getValidAccessToken();
         const res = await fetch(`${API_BASE_URL}/community/upload`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${localStorage.getItem('plpg_access_token')}` },
+          headers: { Authorization: `Bearer ${freshToken}` },
           body: formData,
         });
         const json = await res.json();

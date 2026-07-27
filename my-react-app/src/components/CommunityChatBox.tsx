@@ -260,9 +260,11 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
       const formData = new FormData();
       formData.append('file', pendingFile);
       try {
+        const { getValidAccessToken } = await import('../services/authService');
+        const tokenForUpload = await getValidAccessToken();
         const res = await fetch(`${API_BASE_URL}/community/upload`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${tokenForUpload}` },
           body: formData,
         });
         const json = await res.json();

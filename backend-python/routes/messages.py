@@ -135,6 +135,13 @@ def send_message():
     msg['_id'] = str(result.inserted_id)
     msg['createdAt'] = msg['createdAt'].isoformat()
 
+    try:
+        from socket_events import socketio
+        socketio.emit('new_direct_message', msg, room=str(receiver_id))
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Could not emit socket event: {e}")
+
     return jsonify({'success': True, 'data': msg}), 201
 
 

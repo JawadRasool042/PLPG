@@ -111,6 +111,7 @@ def handle_connect():
         print("Socket connection rejected: No valid token")
         return False  # Reject connection
     user_communities[request.sid] = set()
+    join_room(str(user_id))  # Join personal room for direct messages
     print(f"Socket connected: user={user_id}, sid={request.sid}")
     logger.info(f"Socket connected: user={user_id}, sid={request.sid}")
 
