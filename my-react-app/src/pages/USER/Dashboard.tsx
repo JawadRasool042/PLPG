@@ -408,6 +408,7 @@ const Dashboard: React.FC = () => {
   const [history, setHistory] = useState<QuizAttempt[]>([]);
   const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(null);
   const [pathIntelLoading, setPathIntelLoading] = useState(false);
+  // Phase 1 loading: quiz stats only. Roadmap loads separately in background.
   const [loading, setLoading] = useState(true);
 
   const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
@@ -440,7 +441,8 @@ const Dashboard: React.FC = () => {
     [userInterests?.domainScores],
   );
 
-  const loadData = useCallback(async () => {
+  // Phase 1: Fetch quiz stats only — renders the page instantly.
+  const loadCoreData = useCallback(async () => {
     try {
       const [perf, hist] = await Promise.allSettled([
         getUserPerformance(),
@@ -448,66 +450,75 @@ const Dashboard: React.FC = () => {
       ]);
       if (perf.status === 'fulfilled') setPerformance(perf.value);
       if (hist.status === 'fulfilled') setHistory(hist.value);
-
-      const perfData = perf.status === 'fulfilled' ? perf.value : null;
-
-      if (hasCompletedOnboarding && userInterests) {
-        const primary = getEffectivePrimaryInterest(userInterests);
-        if (!primary) {
-          setPathIntel(null);
-        } else if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) {
-          setPathIntel(null);
-        } else {
-        setPathIntelLoading(true);
-        try {
-          const secondary = (userInterests.allInterests || [])
-            .map((i) => i.domain)
-            .filter(
-              (d, idx, arr) =>
-                Boolean(d) && d !== primary && arr.indexOf(d) === idx,
-            )
-            .slice(0, 5);
-          const engagement = getInterestAssessmentDisplay(userInterests).confidenceRatio;
-          const scoresPayload = buildRoadmapScoresPayload(userInterests.domainScores);
-          const live = await generateRoadmap({
-            domain: primary,
-            primary_interest: primary,
-            secondary_domains: secondary,
-            user_id: user?.id,
-            user: {
-              weekly_availability_hours: 6,
-              learning_style: 'mixed',
-              known: userInterests.assessmentContext?.known || '',
-              want: userInterests.assessmentContext?.want || '',
-              goals: userInterests.assessmentContext?.goals || '',
-              learning_goals: userInterests.assessmentContext?.goals || '',
-              assessment_tags: userInterests.assessmentTags || [],
-            },
-            engagement_score: engagement,
-            interest_strength: engagement,
-            ...(scoresPayload ? { scores: scoresPayload } : {}),
-          });
-          setPathIntel(live);
-        } catch (e: unknown) {
-          setPathIntel(null);
-          console.error('Could not load learning path preview:', e);
-        } finally {
-          setPathIntelLoading(false);
-        }
-        }
-      }
     } catch (error) {
-      console.error('Error loading data:', error);
+      console.error('Error loading core data:', error);
     } finally {
+      // Unblock the UI immediately after quiz data arrives.
       setLoading(false);
+    }
+  }, []);
+
+  // Phase 2: Load roadmap in background — does NOT block page render.
+  const loadRoadmapInBackground = useCallback(async (perfData: UserPerformance | null) => {
+    if (!hasCompletedOnboarding || !userInterests) return;
+    const primary = getEffectivePrimaryInterest(userInterests);
+    if (!primary) return;
+    if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) return;
+
+    setPathIntelLoading(true);
+    try {
+      const secondary = (userInterests.allInterests || [])
+        .map((i) => i.domain)
+        .filter(
+          (d, idx, arr) =>
+            Boolean(d) && d !== primary && arr.indexOf(d) === idx,
+        )
+        .slice(0, 5);
+      const engagement = getInterestAssessmentDisplay(userInterests).confidenceRatio;
+      const scoresPayload = buildRoadmapScoresPayload(userInterests.domainScores);
+      const live = await generateRoadmap({
+        domain: primary,
+        primary_interest: primary,
+        secondary_domains: secondary,
+        user_id: user?.id,
+        user: {
+          weekly_availability_hours: 6,
+          learning_style: 'mixed',
+          known: userInterests.assessmentContext?.known || '',
+          want: userInterests.assessmentContext?.want || '',
+          goals: userInterests.assessmentContext?.goals || '',
+          learning_goals: userInterests.assessmentContext?.goals || '',
+          assessment_tags: userInterests.assessmentTags || [],
+        },
+        engagement_score: engagement,
+        interest_strength: engagement,
+        ...(scoresPayload ? { scores: scoresPayload } : {}),
+      });
+      setPathIntel(live);
+    } catch (e: unknown) {
+      setPathIntel(null);
+      console.error('Could not load learning path preview:', e);
+    } finally {
+      setPathIntelLoading(false);
     }
   }, [hasCompletedOnboarding, userInterests, domainScoresSignature, user?.id]);
 
+  // Effect 1: Load core stats immediately on mount.
   useEffect(() => {
     if (isAuthenticated && user) {
-      void loadData();
+      void loadCoreData();
     }
-  }, [isAuthenticated, user, loadData]);
+  }, [isAuthenticated, user, loadCoreData]);
+
+  // Effect 2: After core data loads, trigger roadmap in background with a small
+  // delay so the browser can paint the page first.
+  useEffect(() => {
+    if (loading || !isAuthenticated || !user) return;
+    const timer = setTimeout(() => {
+      void loadRoadmapInBackground(performance);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [loading, isAuthenticated, user, loadRoadmapInBackground, performance]);
 
   const roadmapPhases = useMemo(
     () => buildRoadmapPhaseList((pathIntel?.roadmap as Record<string, unknown>) ?? null),

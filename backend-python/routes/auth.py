@@ -695,7 +695,7 @@ def resend_verification():
 @auth_bp.route('/login', methods=['POST'])
 @create_rate_limiter(
     window_ms=15 * 60 * 1000,  # 15 minutes
-    max_requests=5,
+    max_requests=50,  # increased for development
     key_func=get_email_key('login'),
     message='Too many login attempts. Please try again in 15 minutes.'
 )

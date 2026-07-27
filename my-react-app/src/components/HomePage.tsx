@@ -108,6 +108,10 @@ const HomePage = () => {
                 <img
                   src="https://images.unsplash.com/photo-1522202176988-66273c2fd55f?ixlib=rb-4.0.3&auto=format&fit=crop&w=1471&q=80"
                   alt="Students Learning"
+                  width={1471}
+                  height={981}
+                  fetchPriority="high"
+                  decoding="async"
                   className="relative rounded-3xl shadow-2xl transform transition-all duration-500 group-hover:scale-105 group-hover:shadow-3xl"
                 />
                 {/* Floating Cards */}
@@ -403,6 +407,10 @@ const HomePage = () => {
                 <img
                   src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80"
                   alt="Professional team collaboration and learning"
+                  width={1470}
+                  height={980}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-auto transform hover:scale-105 transition-transform duration-700"
                 />
                 <div className="absolute inset-0 bg-gradient-to-tr from-indigo-600/20 to-transparent"></div>
