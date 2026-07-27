@@ -776,6 +776,8 @@ def login():
         })
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f'Login error: {e}')
         return jsonify({'detail': 'An unexpected error occurred. Please try again.'}), 500
 
