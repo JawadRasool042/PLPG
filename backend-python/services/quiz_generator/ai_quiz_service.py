@@ -66,7 +66,7 @@ class AIQuizService:
     """
 
     DEFAULT_MODEL = os.getenv("OPENAI_AI_QUIZ_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
-    FALLBACK_MODELS = ("gpt-4o-mini", "gpt-4.1-mini")
+    FALLBACK_MODELS = ("gpt-4o-mini", "gpt-3.5-turbo")
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")

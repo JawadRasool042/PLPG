@@ -34,7 +34,7 @@ from .prompt_helpers import coding_strict_quiz_style_block, topic_looks_like_cod
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-FALLBACK_OPENAI_MODELS = ("gpt-4o-mini", "gpt-4.1-mini")
+FALLBACK_OPENAI_MODELS = ("gpt-4o-mini", "gpt-3.5-turbo")
 
 
 DIFFICULTY_MAP = {

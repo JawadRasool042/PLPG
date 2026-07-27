@@ -3,17 +3,17 @@ import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
 import { Users, MessageSquare, Paperclip, X } from 'lucide-react';
 
-const API = API_BASE_URL;
-const TOKEN_KEY = 'plpg_access_token';
+import { getValidAccessToken } from '../../services/authService';
 
-const getToken = () => localStorage.getItem(TOKEN_KEY);
+const API = API_BASE_URL;
 
 const apiFetch = async (path: string, opts: RequestInit = {}) => {
+  const token = await getValidAccessToken();
   const res = await fetch(`${API}${path}`, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getToken()}`,
+      Authorization: `Bearer ${token}`,
       ...(opts.headers || {}),
     },
   });
@@ -80,7 +80,7 @@ const Chat: React.FC = () => {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    const token = getToken();
+    const token = localStorage.getItem('plpg_access_token');
     if (!token) return;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));

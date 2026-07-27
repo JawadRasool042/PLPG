@@ -401,18 +401,25 @@ type QuickAction = {
   to: string;
 };
 
+let cachedPerformance: UserPerformance | null = null;
+let cachedHistory: QuizAttempt[] = [];
+let coreDataLoaded = false;
+let cachedPathIntel: RoadmapResponse | null = null;
+let cachedPathIntelLoading = false;
+let globalRoadmapAttempted = false;
+
 const Dashboard: React.FC = () => {
   const { isAuthenticated, user, hasCompletedOnboarding, userInterests } = useStore();
   const navigate = useNavigate();
-  const [performance, setPerformance] = useState<UserPerformance | null>(null);
-  const [history, setHistory] = useState<QuizAttempt[]>([]);
-  const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(null);
-  const [pathIntelLoading, setPathIntelLoading] = useState(false);
+  const [performance, setPerformance] = useState<UserPerformance | null>(cachedPerformance);
+  const [history, setHistory] = useState<QuizAttempt[]>(cachedHistory);
+  const [pathIntel, setPathIntel] = useState<RoadmapResponse | null>(cachedPathIntel);
+  const [pathIntelLoading, setPathIntelLoading] = useState(cachedPathIntelLoading);
   // Phase 1 loading: quiz stats only. Roadmap loads separately in background.
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!coreDataLoaded);
   // Prevent roadmap from re-fetching on every navigation back to this page.
-  const roadmapAttempted = React.useRef(false);
-  const performanceRef = React.useRef<UserPerformance | null>(null);
+  const roadmapAttempted = React.useRef(globalRoadmapAttempted);
+  const performanceRef = React.useRef<UserPerformance | null>(cachedPerformance);
 
   const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
   const primaryInterest = useMemo(() => getEffectivePrimaryInterest(userInterests), [userInterests]);
@@ -453,12 +460,17 @@ const Dashboard: React.FC = () => {
       ]);
       if (perf.status === 'fulfilled') {
         setPerformance(perf.value);
+        cachedPerformance = perf.value;
         performanceRef.current = perf.value;
       }
-      if (hist.status === 'fulfilled') setHistory(hist.value);
+      if (hist.status === 'fulfilled') {
+        setHistory(hist.value);
+        cachedHistory = hist.value;
+      }
     } catch (error) {
       console.error('Error loading core data:', error);
     } finally {
+      coreDataLoaded = true;
       // Unblock the UI immediately after quiz data arrives.
       setLoading(false);
     }
@@ -472,6 +484,7 @@ const Dashboard: React.FC = () => {
     if (!hasCompletedDomainQuiz(perfData, normalizeRoadmapDomain(primary))) return;
 
     setPathIntelLoading(true);
+    cachedPathIntelLoading = true;
     try {
       const secondary = (userInterests.allInterests || [])
         .map((i) => i.domain)
@@ -501,11 +514,14 @@ const Dashboard: React.FC = () => {
         ...(scoresPayload ? { scores: scoresPayload } : {}),
       });
       setPathIntel(live);
+      cachedPathIntel = live;
     } catch (e: unknown) {
       setPathIntel(null);
+      cachedPathIntel = null;
       console.error('Could not load learning path preview:', e);
     } finally {
       setPathIntelLoading(false);
+      cachedPathIntelLoading = false;
     }
   }, [hasCompletedOnboarding, userInterests, domainScoresSignature, user?.id]);
 
@@ -523,6 +539,7 @@ const Dashboard: React.FC = () => {
     if (loading || !isAuthenticated || !user) return;
     if (roadmapAttempted.current) return;
     roadmapAttempted.current = true;
+    globalRoadmapAttempted = true;
     const timer = setTimeout(() => {
       void loadRoadmapInBackground(performanceRef.current);
     }, 200);

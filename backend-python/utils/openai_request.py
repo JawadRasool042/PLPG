@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 
-DEFAULT_FALLBACK_MODELS: Tuple[str, ...] = ("gpt-4o-mini", "gpt-4.1-mini")
+DEFAULT_FALLBACK_MODELS: Tuple[str, ...] = ("gpt-4o-mini", "gpt-3.5-turbo")
 
 _RETRYABLE_STATUS = frozenset({404, 429})
 
