@@ -410,6 +410,9 @@ const Dashboard: React.FC = () => {
   const [pathIntelLoading, setPathIntelLoading] = useState(false);
   // Phase 1 loading: quiz stats only. Roadmap loads separately in background.
   const [loading, setLoading] = useState(true);
+  // Prevent roadmap from re-fetching on every navigation back to this page.
+  const roadmapAttempted = React.useRef(false);
+  const performanceRef = React.useRef<UserPerformance | null>(null);
 
   const interestUi = useMemo(() => getInterestAssessmentDisplay(userInterests), [userInterests]);
   const primaryInterest = useMemo(() => getEffectivePrimaryInterest(userInterests), [userInterests]);
@@ -448,7 +451,10 @@ const Dashboard: React.FC = () => {
         getUserPerformance(),
         getQuizHistory(250),
       ]);
-      if (perf.status === 'fulfilled') setPerformance(perf.value);
+      if (perf.status === 'fulfilled') {
+        setPerformance(perf.value);
+        performanceRef.current = perf.value;
+      }
       if (hist.status === 'fulfilled') setHistory(hist.value);
     } catch (error) {
       console.error('Error loading core data:', error);
@@ -510,15 +516,18 @@ const Dashboard: React.FC = () => {
     }
   }, [isAuthenticated, user, loadCoreData]);
 
-  // Effect 2: After core data loads, trigger roadmap in background with a small
-  // delay so the browser can paint the page first.
+  // Effect 2: After core data loads, trigger roadmap in background ONCE with a
+  // small delay so the browser can paint the page first.
+  // roadmapAttempted ref ensures we don't re-fetch when navigating back.
   useEffect(() => {
     if (loading || !isAuthenticated || !user) return;
+    if (roadmapAttempted.current) return;
+    roadmapAttempted.current = true;
     const timer = setTimeout(() => {
-      void loadRoadmapInBackground(performance);
+      void loadRoadmapInBackground(performanceRef.current);
     }, 200);
     return () => clearTimeout(timer);
-  }, [loading, isAuthenticated, user, loadRoadmapInBackground, performance]);
+  }, [loading, isAuthenticated, user, loadRoadmapInBackground]);
 
   const roadmapPhases = useMemo(
     () => buildRoadmapPhaseList((pathIntel?.roadmap as Record<string, unknown>) ?? null),

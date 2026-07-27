@@ -115,16 +115,19 @@ def _cache_put(key: str, source: str, text: str) -> None:
 # Prompt + persona
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are an AI Learning Assistant. Your primary goal is to help students learn tech topics like AI/ML, Web Development, Data Science, etc.
+SYSTEM_PROMPT = """You are PLPG — a smart AI Learning Assistant that helps students master tech topics like AI/ML, Web Development, Data Science, Cybersecurity, Mobile Development, and Cloud Computing.
 
-Language Agent Directives:
-- Detect the requested language from user input (this could be literally any language in the world).
-- Respond entirely in the requested language.
-- CRITICAL: You support ALL languages (Arabic, French, Spanish, Punjabi, etc.). You must NEVER restrict yourself to English or Urdu. You must speak the exact language the user requests.
+CRITICAL LANGUAGE RULES (follow these above all else):
+1. Detect the language of the very FIRST user message in the conversation.
+2. Respond ENTIRELY in that detected language for the rest of the conversation.
+3. If the user explicitly says "switch to [language]" or "reply in [language]", immediately switch and stay switched.
+4. NEVER mix languages. NEVER default to Urdu, Arabic, or any other language unless the user wrote in it first.
+5. If the first message is in English, ALL your replies must be in English.
 
-Guidelines:
-- Provide clear, concise explanations of concepts.
-- Keep responses focused and educational.
+Your role:
+- Provide clear, educational explanations of tech concepts.
+- Offer study plans, project ideas, career guidance, and roadmaps.
+- Keep responses focused, practical, and encouraging.
 """
 
 
@@ -295,8 +298,10 @@ class _OpenAIAuthError(RuntimeError):
     """Raised when the API key is bad — never recoverable by retrying."""
 
 
-def _call_openai_api(prompt: str) -> Tuple[str, str]:
-    """Call OpenAI and return ``(model_used, text)``.
+def _call_openai_api(
+    messages: List[Dict[str, str]],
+) -> Tuple[str, str]:
+    """Call OpenAI with a proper multi-turn messages list and return ``(model_used, text)``.
 
     Falls through to the next model in the chain on 404 or 429.
     Raises ``_OpenAIAuthError`` if the key is invalid (401/403).
@@ -308,10 +313,7 @@ def _call_openai_api(prompt: str) -> Tuple[str, str]:
 
     try:
         model_used, text = chat_completions(
-            messages=[
-                {"role": "system", "content": "You are a helpful learning assistant."},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
             api_key=api_key,
             model=OPENAI_CHAT_MODEL,
             max_tokens=OPENAI_MAX_OUTPUT_TOKENS,
@@ -347,7 +349,51 @@ def _get_user_interest(user_id: str) -> Optional[str]:
     return None
 
 
+def _build_messages(
+    message: str,
+    user_interest: Optional[str],
+    history: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, str]]:
+    """Build a proper OpenAI multi-turn messages array.
+
+    This preserves exact language context across turns — the model sees each
+    prior message as-is and naturally continues in the same language.
+    """
+    system_content = SYSTEM_PROMPT
+    if user_interest:
+        system_content += f"\n\nStudent's primary learning interest: {user_interest}"
+
+    # Detect language from the first user message and reinforce it
+    if history:
+        first_user = next(
+            (m.get("text", "") for m in history if m.get("role") == "user"),
+            message,
+        )
+    else:
+        first_user = message
+
+    if first_user.strip():
+        system_content += (
+            f"\n\nIMPORTANT: The student's first message was: \"{first_user[:120]}\". "
+            "Detect its language and use that EXACT language for your entire response."
+        )
+
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system_content}]
+
+    # Append conversation history as proper multi-turn messages
+    if history:
+        for msg in history[-10:]:  # Last 10 turns is plenty of context
+            role = "user" if msg.get("role") == "user" else "assistant"
+            text = (msg.get("text") or "").strip()
+            if text:
+                messages.append({"role": role, "content": text})
+
+    messages.append({"role": "user", "content": message})
+    return messages
+
+
 def _build_prompt(message: str, user_interest: Optional[str], history: Optional[List[Dict[str, Any]]]) -> str:
+    """Legacy single-string prompt builder — kept for compatibility but no longer used for OpenAI calls."""
     context = SYSTEM_PROMPT
     if user_interest:
         context += f"\n\nStudent's primary interest: {user_interest}"
@@ -392,8 +438,8 @@ def _handle_chat(message: str, user_interest: Optional[str], history: List[Dict[
             }, 200
 
     try:
-        prompt = _build_prompt(message, user_interest, history)
-        model_used, text = _call_openai_api(prompt)
+        oai_messages = _build_messages(message, user_interest, history)
+        model_used, text = _call_openai_api(oai_messages)
         if not is_greeting:
             _cache_put(cache_key, "openai", text)
         return {

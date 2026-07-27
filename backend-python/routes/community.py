@@ -58,12 +58,19 @@ def get_communities():
     members_col = get_collection('community_members')
 
     communities = list(col.find({}))
+    if not communities:
+        return jsonify({'success': True, 'data': []})
+
+    # Single aggregation to get all member counts at once (avoids N+1 queries)
+    counts_cursor = members_col.aggregate([
+        {'$group': {'_id': '$community_id', 'count': {'$sum': 1}}}
+    ])
+    count_map = {doc['_id']: doc['count'] for doc in counts_cursor}
+
     result = []
     for c in communities:
-        c_id = str(c['_id'])
-        member_count = members_col.count_documents({'community_id': c_id})
         doc = serialize(c)
-        doc['memberCount'] = member_count
+        doc['memberCount'] = count_map.get(str(c['_id']), 0)
         result.append(doc)
 
     return jsonify({'success': True, 'data': result})
