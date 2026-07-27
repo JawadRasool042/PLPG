@@ -109,6 +109,9 @@ def create_app(config_name=None):
     if not config.IS_PRODUCTION:
         _safe_run_seed("seed_recommendation_catalog", "seed_recommendation_catalog", "Recommendation catalog auto-seeded for development")
     
+    # Auto-seed communities (always, so production instances aren't empty)
+    _safe_run_seed("seed_communities", "seed_communities", "Communities auto-seeded")
+    
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(profile_bp, url_prefix='/api')
