@@ -227,14 +227,20 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
       setShowMentions(false);
     }
 
-    const socket = socketRef.current;
-    if (socket) {
-      socket.emit('typing', { community_id: community._id, is_typing: true, token });
-      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = setTimeout(() => {
-        socket.emit('typing', { community_id: community._id, is_typing: false, token });
-      }, 2000);
-    }
+    import('../services/authService').then(({ getValidAccessToken }) => {
+      getValidAccessToken().then(freshToken => {
+        socketRef.current?.emit('typing', { community_id: community._id, is_typing: true, token: freshToken });
+      }).catch(console.error);
+    });
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      import('../services/authService').then(({ getValidAccessToken }) => {
+        getValidAccessToken().then(freshToken => {
+          socketRef.current?.emit('typing', { community_id: community._id, is_typing: false, token: freshToken });
+        }).catch(console.error);
+      });
+    }, 2000);
   };
 
   // ── Insert @mention ──
@@ -275,7 +281,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
             fileUrl: json.fileUrl,
             parentMessageId: replyTo?._id || null,
             mentions: selectedMentions,
-            token,
+            token: tokenForUpload,
           });
         } else {
           alert(json.message || 'Upload failed');
@@ -293,13 +299,20 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
       }
     } else {
       // Text-only message
-      socketRef.current?.emit('send_message', {
-        community_id: community._id,
-        text: text.trim(),
-        parentMessageId: replyTo?._id || null,
-        mentions: selectedMentions,
-        token,
-      });
+      try {
+        const { getValidAccessToken } = await import('../services/authService');
+        const freshToken = await getValidAccessToken();
+        socketRef.current?.emit('send_message', {
+          community_id: community._id,
+          text: text.trim(),
+          parentMessageId: replyTo?._id || null,
+          mentions: selectedMentions,
+          token: freshToken,
+        });
+      } catch (err) {
+        console.error('Failed to get token for message', err);
+        alert('Failed to send message. Please log in again.');
+      }
     }
 
     setText('');
@@ -307,7 +320,12 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
     setSelectedMentions([]);
     setShowMentions(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-    socketRef.current?.emit('typing', { community_id: community._id, is_typing: false, token });
+    
+    import('../services/authService').then(({ getValidAccessToken }) => {
+      getValidAccessToken().then(freshToken => {
+        socketRef.current?.emit('typing', { community_id: community._id, is_typing: false, token: freshToken });
+      }).catch(console.error);
+    });
   };
 
   // ── Cancel pending file ──

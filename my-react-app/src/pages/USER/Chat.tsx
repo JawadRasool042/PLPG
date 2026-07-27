@@ -52,18 +52,25 @@ interface Community {
   memberCount?: number;
 }
 
+// Global cache variables for Chat data to persist across tab switches
+let cachedContacts: Contact[] | null = null;
+let cachedCommunities: Community[] | null = null;
+let cachedMyCommunities: string[] | null = null;
+
 const Chat: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'direct' | 'communities'>('direct');
   
   // Direct Messages State
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>(cachedContacts || []);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(!cachedContacts);
   const [selected, setSelected] = useState<Contact | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState('');
   
   // Communities State
-  const [communities, setCommunities] = useState<Community[]>([]);
-  const [myCommunities, setMyCommunities] = useState<string[]>([]);
+  const [communities, setCommunities] = useState<Community[]>(cachedCommunities || []);
+  const [myCommunities, setMyCommunities] = useState<string[]>(cachedMyCommunities || []);
+  const [isLoadingCommunities, setIsLoadingCommunities] = useState(!cachedCommunities);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
 
@@ -115,9 +122,13 @@ const Chat: React.FC = () => {
   const loadContacts = useCallback(async () => {
     try {
       const res = await apiFetch('/messages/contacts');
-      setContacts(res.data || []);
+      const data = res.data || [];
+      setContacts(data);
+      cachedContacts = data;
     } catch (e) {
       console.error('Failed to load contacts', e);
+    } finally {
+      setIsLoadingContacts(false);
     }
   }, []);
 
@@ -127,10 +138,18 @@ const Chat: React.FC = () => {
         apiFetch('/community/'),
         apiFetch('/community/my')
       ]);
-      setCommunities(allRes.data || []);
-      setMyCommunities((myRes.data || []).map((c: Community) => c._id));
+      const data = allRes.data || [];
+      const myData = (myRes.data || []).map((c: Community) => c._id);
+      
+      setCommunities(data);
+      setMyCommunities(myData);
+      
+      cachedCommunities = data;
+      cachedMyCommunities = myData;
     } catch (e) {
       console.error('Failed to load communities', e);
+    } finally {
+      setIsLoadingCommunities(false);
     }
   }, []);
 
@@ -176,61 +195,65 @@ const Chat: React.FC = () => {
 
     setSending(true);
 
-    if (hasFile && pendingFile) {
-      setUploading(true);
-      setUploadProgress(`Sending ${pendingFile.name}...`);
-      const formData = new FormData();
-      formData.append('file', pendingFile);
+    try {
+      if (hasFile && pendingFile) {
+        setUploading(true);
+        setUploadProgress(`Sending ${pendingFile.name}...`);
+        const formData = new FormData();
+        formData.append('file', pendingFile);
 
-      try {
-        const freshToken = await getValidAccessToken();
-        const res = await fetch(`${API_BASE_URL}/community/upload`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${freshToken}` },
-          body: formData,
-        });
-        const json = await res.json();
-        if (json.success) {
-          const msgRes = await apiFetch('/messages/send', {
+        try {
+          const freshToken = await getValidAccessToken();
+          const res = await fetch(`${API_BASE_URL}/community/upload`, {
             method: 'POST',
-            body: JSON.stringify({ 
-              receiverId: selected._id, 
-              text: text.trim() || `📎 ${pendingFile.name}`, 
-              fileUrl: json.fileUrl 
-            }),
+            headers: { Authorization: `Bearer ${freshToken}` },
+            body: formData,
           });
-          setMessages(prev => [...prev, msgRes.data]);
-          loadContacts();
-        } else {
-          alert(json.message || 'Upload failed');
+          const json = await res.json();
+          if (json.success) {
+            const msgRes = await apiFetch('/messages/send', {
+              method: 'POST',
+              body: JSON.stringify({ 
+                receiverId: selected._id, 
+                text: text.trim() || `📎 ${pendingFile.name}`, 
+                fileUrl: json.fileUrl 
+              }),
+            });
+            setMessages(prev => [...prev, msgRes.data]);
+            loadContacts();
+            setText('');
+          } else {
+            alert(json.message || 'Upload failed');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Upload failed. Please try again.');
+        } finally {
+          setUploading(false);
+          setUploadProgress(null);
+          setPendingFile(null);
+          if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
+          setPendingFilePreview(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
         }
-      } catch (err) {
-        console.error(err);
-        alert('Upload failed. Please try again.');
-      } finally {
-        setUploading(false);
-        setUploadProgress(null);
-        setPendingFile(null);
-        if (pendingFilePreview) URL.revokeObjectURL(pendingFilePreview);
-        setPendingFilePreview(null);
-        if (fileInputRef.current) fileInputRef.current.value = '';
+      } else {
+        // Text-only message
+        try {
+          const res = await apiFetch('/messages/send', {
+            method: 'POST',
+            body: JSON.stringify({ receiverId: selected._id, text: text.trim() }),
+          });
+          setMessages(prev => [...prev, res.data]);
+          loadContacts();
+          setText('');
+        } catch (e) {
+          console.error('Send failed', e);
+          alert('Failed to send message. Please try again.');
+        }
       }
-    } else {
-      // Text-only message
-      try {
-        const res = await apiFetch('/messages/send', {
-          method: 'POST',
-          body: JSON.stringify({ receiverId: selected._id, text: text.trim() }),
-        });
-        setMessages(prev => [...prev, res.data]);
-        loadContacts();
-      } catch (e) {
-        console.error('Send failed', e);
-      }
+    } finally {
+      setSending(false);
     }
-
-    setText('');
-    setSending(false);
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,15 +298,21 @@ const Chat: React.FC = () => {
     setTransitioningId(cId);
     
     try {
-      await apiFetch(`/community/${cId}/${isJoined ? 'leave' : 'join'}`, { method: 'POST' });
+      const res = await apiFetch(`/community/${cId}/${isJoined ? 'leave' : 'join'}`, { method: 'POST' });
       
-      setTimeout(() => {
-        if (isJoined && selectedCommunity?._id === cId) setSelectedCommunity(null);
-        loadCommunities();
+      if (res.success) {
+        setTimeout(() => {
+          if (isJoined && selectedCommunity?._id === cId) setSelectedCommunity(null);
+          loadCommunities();
+          setTransitioningId(null);
+        }, 1000);
+      } else {
+        alert(res.message || 'Failed to update community membership');
         setTransitioningId(null);
-      }, 1000);
+      }
     } catch (err) {
       console.error(err);
+      alert('Network error. Failed to join community.');
       setTransitioningId(null);
     }
   };
@@ -357,8 +386,11 @@ const Chat: React.FC = () => {
               {/* List */}
               <div className="flex-1 overflow-y-auto">
                 {activeTab === 'direct' ? (
-                  <>
-                    {instructors.length > 0 && (
+                  isLoadingContacts ? (
+                    <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Loading contacts...</div>
+                  ) : (
+                    <>
+                      {instructors.length > 0 && (
                       <div>
                         <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100">
                           <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Teachers ({instructors.length})</span>
@@ -378,10 +410,14 @@ const Chat: React.FC = () => {
                       <div className="p-8 text-center text-gray-500 text-sm">No contacts found</div>
                     )}
                   </>
+                  )
                 ) : (
-                  <>
-                    {(() => {
-                      const joined = filteredCommunities.filter(c => myCommunities.includes(c._id));
+                  isLoadingCommunities ? (
+                    <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Loading communities...</div>
+                  ) : (
+                    <>
+                      {(() => {
+                        const joined = filteredCommunities.filter(c => myCommunities.includes(c._id));
                       const other = filteredCommunities.filter(c => !myCommunities.includes(c._id));
 
                       return (
@@ -415,8 +451,11 @@ const Chat: React.FC = () => {
                                   </button>
                                 </div>
                               ))}
-                              {joined.length === 0 && (
+                              {joined.length === 0 && !search && (
                                 <div className="p-6 text-center text-gray-500 text-sm border-b border-gray-100">You haven't joined any communities yet.</div>
+                              )}
+                              {joined.length === 0 && search && (
+                                <div className="p-6 text-center text-gray-500 text-sm border-b border-gray-100">No joined communities match your search.</div>
                               )}
                             </div>
                           </details>
@@ -445,7 +484,7 @@ const Chat: React.FC = () => {
                                     disabled={transitioningId === c._id}
                                     className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${transitioningId === c._id ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                                   >
-                                    {transitioningId === c._id ? 'Joined' : 'Join'}
+                                    {transitioningId === c._id ? '...' : 'Join'}
                                   </button>
                                 </div>
                               ))}
@@ -458,6 +497,7 @@ const Chat: React.FC = () => {
                       );
                     })()}
                   </>
+                  )
                 )}
               </div>
             </div>
