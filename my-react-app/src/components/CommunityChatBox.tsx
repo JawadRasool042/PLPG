@@ -151,7 +151,15 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
     });
 
     s.on('new_message', (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
+      setMessages(prev => {
+        // Prevent duplicate messages if we already appended it optimistically
+        const isOptimistic = prev.some(m => m._id.startsWith('temp-') && m.text === msg.text && m.sender_id === msg.sender_id);
+        if (isOptimistic) {
+          return prev.map(m => (m._id.startsWith('temp-') && m.text === msg.text) ? msg : m);
+        }
+        if (prev.some(m => m._id === msg._id)) return prev;
+        return [...prev, msg];
+      });
     });
 
     s.on('user_status', (data: { user_id: string; status: string; online_count: number }) => {
@@ -259,35 +267,54 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
     const hasFile = !!pendingFile;
     if ((!hasText && !hasFile) || uploading) return;
 
-    // If there's a pending file, upload it first
+    // Save text state in case we need to rollback
+    const messageText = text.trim();
+    
+    // Optimistically clear text so UI feels instant
+    setText('');
+    setReplyTo(null);
+    setSelectedMentions([]);
+    setShowMentions(false);
+
     if (hasFile && pendingFile) {
       setUploading(true);
       setUploadProgress(`Sending ${pendingFile.name}...`);
-      const formData = new FormData();
-      formData.append('file', pendingFile);
       try {
+        const formData = new FormData();
+        formData.append('file', pendingFile);
+
         const { getValidAccessToken } = await import('../services/authService');
         const tokenForUpload = await getValidAccessToken();
+        
+        // Use AbortController to prevent infinite hang on Render/Vercel
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+        
         const res = await fetch(`${API_BASE_URL}/community/upload`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${tokenForUpload}` },
           body: formData,
+          signal: controller.signal
         });
+        clearTimeout(timeoutId);
+        
         const json = await res.json();
         if (json.success) {
           socketRef.current?.emit('send_message', {
             community_id: community._id,
-            text: text.trim() || pendingFile.name,
+            text: messageText || pendingFile.name,
             fileUrl: json.fileUrl,
             parentMessageId: replyTo?._id || null,
             mentions: selectedMentions,
             token: tokenForUpload,
           });
         } else {
+          setText(messageText); // Restore on failure
           alert(json.message || 'Upload failed');
         }
       } catch (err) {
         console.error(err);
+        setText(messageText); // Restore on failure
         alert('Upload failed. Please try again.');
       } finally {
         setUploading(false);
@@ -298,27 +325,38 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
         if (fileInputRef.current) fileInputRef.current.value = '';
       }
     } else {
-      // Text-only message
+      // Text-only message: Optimistic UI
+      const tempId = `temp-${Date.now()}`;
+      const tempMsg: Message = {
+        _id: tempId,
+        sender_id: myId,
+        text: messageText,
+        mentions: selectedMentions,
+        reactions: {},
+        createdAt: new Date().toISOString()
+      };
+      
+      setMessages(prev => [...prev, tempMsg]);
+      scrollToBottom();
+
       try {
         const { getValidAccessToken } = await import('../services/authService');
         const freshToken = await getValidAccessToken();
         socketRef.current?.emit('send_message', {
           community_id: community._id,
-          text: text.trim(),
+          text: messageText,
           parentMessageId: replyTo?._id || null,
           mentions: selectedMentions,
           token: freshToken,
         });
       } catch (err) {
         console.error('Failed to get token for message', err);
+        setMessages(prev => prev.filter(m => m._id !== tempId));
+        setText(messageText); // Restore on failure
         alert('Failed to send message. Please log in again.');
       }
     }
 
-    setText('');
-    setReplyTo(null);
-    setSelectedMentions([]);
-    setShowMentions(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     
     import('../services/authService').then(({ getValidAccessToken }) => {

@@ -195,6 +195,12 @@ const Chat: React.FC = () => {
 
     setSending(true);
 
+    // Save text state in case we need to rollback
+    const messageText = text.trim();
+    
+    // Optimistically clear text so UI feels instant
+    setText('');
+
     try {
       if (hasFile && pendingFile) {
         setUploading(true);
@@ -204,29 +210,38 @@ const Chat: React.FC = () => {
 
         try {
           const freshToken = await getValidAccessToken();
+          
+          // Use AbortController to prevent infinite hang on Render/Vercel
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
+          
           const res = await fetch(`${API_BASE_URL}/community/upload`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${freshToken}` },
             body: formData,
+            signal: controller.signal
           });
+          clearTimeout(timeoutId);
+          
           const json = await res.json();
           if (json.success) {
             const msgRes = await apiFetch('/messages/send', {
               method: 'POST',
               body: JSON.stringify({ 
                 receiverId: selected._id, 
-                text: text.trim() || `📎 ${pendingFile.name}`, 
+                text: messageText || `📎 ${pendingFile.name}`, 
                 fileUrl: json.fileUrl 
               }),
             });
             setMessages(prev => [...prev, msgRes.data]);
             loadContacts();
-            setText('');
           } else {
+            setText(messageText); // Restore text on failure
             alert(json.message || 'Upload failed');
           }
         } catch (err) {
           console.error(err);
+          setText(messageText); // Restore text on failure
           alert('Upload failed. Please try again.');
         } finally {
           setUploading(false);
@@ -237,17 +252,33 @@ const Chat: React.FC = () => {
           if (fileInputRef.current) fileInputRef.current.value = '';
         }
       } else {
-        // Text-only message
+        // Text-only message: Optimistic UI
+        const tempId = `temp-${Date.now()}`;
+        const tempMsg: Message = {
+          _id: tempId,
+          senderId: myId,
+          receiverId: selected._id,
+          text: messageText,
+          read: false,
+          createdAt: new Date().toISOString()
+        };
+        
+        setMessages(prev => [...prev, tempMsg]);
+        scrollToBottom();
+
         try {
           const res = await apiFetch('/messages/send', {
             method: 'POST',
-            body: JSON.stringify({ receiverId: selected._id, text: text.trim() }),
+            body: JSON.stringify({ receiverId: selected._id, text: messageText }),
           });
-          setMessages(prev => [...prev, res.data]);
+          // Replace temp message with real one
+          setMessages(prev => prev.map(m => m._id === tempId ? res.data : m));
           loadContacts();
-          setText('');
         } catch (e) {
           console.error('Send failed', e);
+          // Remove temp message
+          setMessages(prev => prev.filter(m => m._id !== tempId));
+          setText(messageText); // Restore text on failure
           alert('Failed to send message. Please try again.');
         }
       }
