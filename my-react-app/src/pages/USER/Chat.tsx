@@ -164,7 +164,7 @@ const Chat: React.FC = () => {
       try {
         const res = await fetch(`${API_BASE_URL}/community/upload`, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${getToken()}` },
+          headers: { Authorization: `Bearer ${localStorage.getItem('plpg_access_token')}` },
           body: formData,
         });
         const json = await res.json();
