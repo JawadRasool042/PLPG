@@ -3,8 +3,8 @@ import os
 
 # Only monkey patch if we are not running under gunicorn (which patches it automatically)
 if "gunicorn" not in os.environ.get("SERVER_SOFTWARE", "") and not any("gunicorn" in arg for arg in sys.argv):
-    import eventlet
-    eventlet.monkey_patch()
+    import gevent.monkey
+    gevent.monkey.patch_all()
 
 import os
 import logging
