@@ -164,7 +164,7 @@ def admin_login():
         if not admin:
             # Prevent timing attacks - simulate password check
             import bcrypt
-            bcrypt.checkpw(password.encode(), b'$2b$12$invalidhashfortimingattackprevention....................')
+            bcrypt.checkpw(password.encode(), b'$2b$12$TqMf2D3aqpaAsObrDHnHAOvpje4WFBdGkrHoPV/Ml1RrwU5UvYXFm')
             
             AuditLog.create({
                 'action': 'LOGIN_FAILED',

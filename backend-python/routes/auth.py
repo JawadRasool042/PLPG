@@ -714,7 +714,7 @@ def login():
         
         if not user:
             # Prevent timing attacks - simulate password check
-            bcrypt.checkpw(password.encode(), b'$2a$12$invalid.hash.for.timing.attack.prevention')
+            bcrypt.checkpw(password.encode(), b'$2b$12$TqMf2D3aqpaAsObrDHnHAOvpje4WFBdGkrHoPV/Ml1RrwU5UvYXFm')
             log_security_event('LOGIN_UNKNOWN_EMAIL', {'email': email, 'ip': client_ip})
             return jsonify({'detail': 'Invalid email or password'}), 401
         
