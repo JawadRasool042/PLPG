@@ -93,7 +93,7 @@ def init_sockets(app):
     socketio.init_app(
         app,
         cors_allowed_origins="*",
-        async_mode='eventlet',
+        async_mode='gevent',
         logger=True,
         engineio_logger=True
     )

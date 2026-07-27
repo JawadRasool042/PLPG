@@ -3,7 +3,8 @@ flask
 flask-cors
 gunicorn
 flask-socketio
-eventlet
+gevent
+gevent-websocket
 
 # Database
 pymongo
