@@ -68,11 +68,11 @@ const RemediationLessonPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
         <div className="max-w-4xl mx-auto px-4 text-center py-16">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto" />
-          <p className="mt-4 text-slate-600">Generating your personalized study guide…</p>
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-4 text-slate-600 dark:text-slate-300">Generating your personalized study guide…</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
             Each section is organized by the topic your quiz question tested.
           </p>
         </div>
@@ -82,7 +82,7 @@ const RemediationLessonPage: React.FC = () => {
 
   if (error || !status) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
         <div className="max-w-4xl mx-auto px-4">
           <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
             <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-3" />
@@ -122,11 +122,11 @@ const RemediationLessonPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
       <div className="max-w-4xl mx-auto px-4">
         <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl shadow-xl p-8 mb-6 text-white">
           <div className="flex items-start gap-4">
-            <div className="p-3 bg-white/20 rounded-xl">
+            <div className="p-3 bg-white dark:bg-slate-900/20 rounded-xl">
               <BookOpen className="w-8 h-8" />
             </div>
             <div className="flex-1">
@@ -151,12 +151,12 @@ const RemediationLessonPage: React.FC = () => {
             {questionSections.map((section) => (
               <section
                 key={section.question_index}
-                className={`bg-white rounded-xl shadow-sm border p-6 ${
+                className={`bg-white dark:bg-slate-900 rounded-xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border p-6 ${
                   section.is_correct ? 'border-emerald-200' : 'border-amber-200'
                 }`}
               >
                 <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <h2 className="text-xl font-bold text-slate-900">{section.topic}</h2>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-white">{section.topic}</h2>
                   <span
                     className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                       section.is_correct
@@ -168,19 +168,19 @@ const RemediationLessonPage: React.FC = () => {
                   </span>
                 </div>
 
-                <p className="text-sm font-medium text-slate-500 mb-2">
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
                   Quiz question {(section.question_index ?? 0) + 1}
                 </p>
-                <p className="font-medium text-slate-900 mb-4 leading-relaxed">{section.question}</p>
+                <p className="font-medium text-slate-900 dark:text-white mb-4 leading-relaxed">{section.question}</p>
 
                 <div className="grid sm:grid-cols-2 gap-3 text-sm mb-4">
                   <div
                     className={`rounded-lg p-3 ${
-                      section.is_correct ? 'bg-slate-50 border border-slate-200' : 'bg-red-50 border border-red-100'
+                      section.is_correct ? 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700' : 'bg-red-50 border border-red-100'
                     }`}
                   >
-                    <span className="font-semibold text-slate-700">Your answer: </span>
-                    <span className="text-slate-900">{section.your_answer || '—'}</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">Your answer: </span>
+                    <span className="text-slate-900 dark:text-white">{section.your_answer || '—'}</span>
                   </div>
                   <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
                     <span className="font-semibold text-emerald-800">Correct answer: </span>
@@ -188,12 +188,12 @@ const RemediationLessonPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-5">
-                  <p className="text-sm font-semibold text-slate-900 mb-3">Explanation</p>
+                <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg p-5">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Explanation</p>
                   {sectionExplanation(section) ? (
                     <div>{formatLessonExplanation(sectionExplanation(section))}</div>
                   ) : (
-                    <p className="text-sm text-slate-500 italic">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 italic">
                       Explanation is being generated. Reload this page in a moment.
                     </p>
                   )}
@@ -231,8 +231,8 @@ const RemediationLessonPage: React.FC = () => {
           </section>
         )}
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-600">
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-slate-700 p-6 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
             When you are ready, retake the <strong>exact same quiz</strong> to continue your learning
             path.
           </p>

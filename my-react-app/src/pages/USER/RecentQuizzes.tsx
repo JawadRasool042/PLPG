@@ -11,6 +11,26 @@ import {
 import { parseApiError } from '../../services/apiError';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 
+import { Bar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend
+);
+
 /** Percentage for charts/list when API omits `score` but sends correct/total counts. */
 function attemptPercentScore(a: QuizAttempt): number {
   if (a.totalQuestions > 0) {
@@ -231,10 +251,10 @@ function AutoQuizInsightCard({
   const lines = behaviorFeedbackLines(attempt, scorePct, ctx);
   const recommendation = scoreRecommendation(scorePct, attempt.interest || 'this topic', attempt.level || 'current level');
   return (
-    <div className="mt-3 space-y-2 rounded-lg border border-indigo-100 bg-indigo-50/40 px-3 py-3">
+    <div className="mt-3 space-y-2 rounded-lg border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50/40 px-3 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-indigo-800">Live behaviour insight</span>
-        <span className="text-xs text-slate-600">(updates with your recent pattern)</span>
+        <span className="text-xs text-slate-600 dark:text-slate-300">(updates with your recent pattern)</span>
         <div className="flex gap-0.5" aria-hidden title={`Implied strength from score: ${implied} of 5`}>
           {[1, 2, 3, 4, 5].map((r) => (
             <span key={r} className={`text-base leading-none ${r <= implied ? 'text-amber-500' : 'text-slate-300'}`}>
@@ -246,7 +266,7 @@ function AutoQuizInsightCard({
       <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
         <span className="font-semibold">Score recommendation:</span> {recommendation}
       </div>
-      <ul className="list-disc list-inside space-y-1 text-sm text-slate-700">
+      <ul className="list-disc list-inside space-y-1 text-sm text-slate-700 dark:text-slate-300">
         {lines.map((line, i) => (
           <li key={i}>{line}</li>
         ))}
@@ -537,7 +557,7 @@ const RecentQuizzes: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
         <div className="max-w-6xl mx-auto px-4">
           <LoadingSkeleton variant="card" className="mb-4" />
           <LoadingSkeleton variant="card" />
@@ -547,12 +567,12 @@ const RecentQuizzes: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
       <div className="max-w-6xl mx-auto px-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Recent quizzes</h1>
-            <p className="text-slate-600 text-sm mt-1">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Recent quizzes</h1>
+            <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">
               All attempts as a live score graph (oldest → newest). Refreshes about every {LIVE_REFRESH_MS / 1000}s and when
               you return to this tab.
             </p>
@@ -560,7 +580,7 @@ const RecentQuizzes: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             <Link
               to="/quizzes"
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50"
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-950"
             >
               ← Quiz hub
             </Link>
@@ -572,7 +592,7 @@ const RecentQuizzes: React.FC = () => {
             </Link>
             <Link
               to="/feedback"
-              className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-medium hover:bg-slate-50"
+              className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-950"
             >
               General feedback
             </Link>
@@ -584,11 +604,11 @@ const RecentQuizzes: React.FC = () => {
         )}
 
         {recentAttemptsOldestFirst.length > 0 ? (
-          <div className="mb-6 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
             <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-              <h2 className="text-xl font-bold text-slate-900">All recent quizzes — graph</h2>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">All recent quizzes — graph</h2>
               <div className="text-right">
-                <div className="text-xs text-slate-500">{recentAttemptsOldestFirst.length} stored attempts</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{recentAttemptsOldestFirst.length} stored attempts</div>
                 <div className="text-[11px] text-emerald-600 flex items-center justify-end gap-1.5">
                   <span
                     className={`inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 ${liveRefreshing ? 'animate-pulse' : ''}`}
@@ -601,52 +621,81 @@ const RecentQuizzes: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="border border-slate-100 rounded-xl px-3 py-3 bg-slate-50/50 overflow-x-auto">
+            <div className="border border-slate-100 dark:border-slate-800 rounded-xl px-3 py-3 bg-slate-50 dark:bg-slate-950/50 overflow-x-auto">
               <div
-                className="h-48 flex items-end gap-2"
-                style={{ minWidth: `${Math.max(520, recentAttemptsOldestFirst.length * 28)}px` }}
+                className="h-64"
+                style={{ minWidth: `${Math.max(520, recentAttemptsOldestFirst.length * 35)}px` }}
               >
-                {recentAttemptsOldestFirst.map((attempt, idx) => {
-                  const score = attemptPercentScore(attempt);
-                  const barClass =
-                    score >= 80
-                      ? 'bg-gradient-to-t from-emerald-500 to-emerald-400'
-                      : score >= 60
-                        ? 'bg-gradient-to-t from-amber-500 to-amber-400'
-                        : 'bg-gradient-to-t from-rose-500 to-rose-400';
-                  return (
-                    <div key={`recent-graph-${attempt.id}`} className="w-6 h-full flex-shrink-0 flex flex-col items-center">
-                      <span className="text-[10px] text-slate-500 mb-1">{Math.round(score)}</span>
-                      <div className="w-full flex-1 flex items-end">
-                        <div
-                          className={`w-full rounded-t-md ${barClass}`}
-                          style={{ height: `${Math.max(8, score)}%` }}
-                          title={`#${idx + 1} • ${attempt.interest || 'General'} • ${score}% • ${formatAttemptDateTime(attempt.completedAt)}`}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+                <Bar
+                  data={{
+                    labels: recentAttemptsOldestFirst.map(a => formatAttemptDateTime(a.completedAt)),
+                    datasets: [
+                      {
+                        label: 'Score',
+                        data: recentAttemptsOldestFirst.map(a => attemptPercentScore(a)),
+                        backgroundColor: recentAttemptsOldestFirst.map(a => {
+                          const s = attemptPercentScore(a);
+                          if (s >= 80) return 'rgba(16, 185, 129, 0.8)'; // emerald-500
+                          if (s >= 60) return 'rgba(245, 158, 11, 0.8)'; // amber-500
+                          return 'rgba(244, 63, 94, 0.8)'; // rose-500
+                        }),
+                        borderRadius: 4,
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: false },
+                      tooltip: {
+                        callbacks: {
+                          title: (items) => {
+                            const idx = items[0].dataIndex;
+                            const attempt = recentAttemptsOldestFirst[idx];
+                            return `${attempt.interest || 'General'} • ${formatAttemptDateTime(attempt.completedAt)}`;
+                          },
+                          label: (item) => `Score: ${item.raw}%`
+                        }
+                      }
+                    },
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        max: 100,
+                        grid: { color: 'rgba(148, 163, 184, 0.1)' } // slate-400 / 10%
+                      },
+                      x: {
+                        grid: { display: false },
+                        ticks: {
+                          callback: function(_value, index) {
+                            return `#${index + 1}`;
+                          }
+                        }
+                      }
+                    }
+                  }}
+                />
               </div>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Each bar is one attempt; height is score %. Hover for topic and date. Scroll horizontally for long history.
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Each bar is one attempt. Hover for topic, date, and score %. Scroll horizontally for long history.
             </p>
           </div>
         ) : (
           !error && (
-            <div className="mb-6 rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-slate-600 text-sm">
+            <div className="mb-6 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-10 text-center text-slate-600 dark:text-slate-300 text-sm">
               No attempts yet. Complete a quiz from the quiz hub to see your graph here.
             </div>
           )
         )}
 
         {sortedNewestFirst.length > 0 && (
-          <div className="mb-6 bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="mb-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">Insights on recent quizzes</h2>
-                <p className="text-sm text-slate-600 mt-1">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Insights on recent quizzes</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-1">
                   Live coaching from your last {recentForInsights.length} attempt
                   {recentForInsights.length === 1 ? '' : 's'} (up to {MAX_QUIZ_INSIGHT_ROWS}), same-topic momentum, and
                   server-side performance hints. Updates when new attempts sync (~{LIVE_REFRESH_MS / 1000}s).
@@ -662,7 +711,7 @@ const RecentQuizzes: React.FC = () => {
 
             <div className="mb-4 grid md:grid-cols-3 gap-3">
               <div className="md:col-span-2">
-                <label htmlFor="recent-quiz-search" className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="recent-quiz-search" className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   Search quizzes / topics
                 </label>
                 <input
@@ -671,18 +720,18 @@ const RecentQuizzes: React.FC = () => {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by topic, level, quiz type, score..."
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div>
-                <label htmlFor="recent-topic-filter" className="block text-xs font-semibold text-slate-600 mb-1">
+                <label htmlFor="recent-topic-filter" className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
                   Topic filter
                 </label>
                 <select
                   id="recent-topic-filter"
                   value={topicFilter}
                   onChange={(e) => setTopicFilter(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   {availableTopicOptions.map((topic) => (
                     <option key={topic} value={topic}>
@@ -694,7 +743,7 @@ const RecentQuizzes: React.FC = () => {
             </div>
 
             {filteredNewestFirst.length === 0 && (
-              <div className="mb-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              <div className="mb-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-4 text-sm text-slate-600 dark:text-slate-300">
                 No quizzes match this search/filter.
               </div>
             )}
@@ -718,16 +767,16 @@ const RecentQuizzes: React.FC = () => {
             )}
 
             {recentAttemptsSummary && (
-              <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                <p className="font-semibold text-slate-900">Overall (this window)</p>
+              <div className="mb-5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
+                <p className="font-semibold text-slate-900 dark:text-white">Overall (this window)</p>
                 <p className="mt-1">
                   Average score <span className="font-bold text-indigo-700">{recentAttemptsSummary.avg}%</span> across{' '}
                   {recentAttemptsSummary.count} attempt{recentAttemptsSummary.count === 1 ? '' : 's'}. Latest:{' '}
                   <span className="font-semibold tabular-nums">{recentAttemptsSummary.newest}%</span>.
                 </p>
-                <p className="mt-2 text-slate-600">{recentAttemptsSummary.trend}</p>
+                <p className="mt-2 text-slate-600 dark:text-slate-300">{recentAttemptsSummary.trend}</p>
                 {recentAttemptsSummary.weakTopics.length > 0 && (
-                  <p className="mt-2 text-slate-600">
+                  <p className="mt-2 text-slate-600 dark:text-slate-300">
                     Topics under 60% in this list:{' '}
                     {Array.from(new Set(recentAttemptsSummary.weakTopics.map((w) => w.interest))).join(', ')}.
                   </p>
@@ -807,11 +856,11 @@ const RecentQuizzes: React.FC = () => {
               {recentForInsights.map((a, i) => (
                 <li
                   key={`quiz-insight-${a.id}`}
-                  className="rounded-xl border border-slate-100 bg-slate-50/40 p-4 sm:p-5"
+                  className="rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 p-4 sm:p-5"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2 mb-1">
-                    <p className="font-semibold text-slate-900">{a.interest || 'Quiz'}</p>
-                    <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                    <p className="font-semibold text-slate-900 dark:text-white">{a.interest || 'Quiz'}</p>
+                    <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
                       <span className="tabular-nums font-semibold text-indigo-700">{attemptPercentScore(a)}%</span>
                       <span>{a.level}</span>
                       <span className="text-xs">{formatAttemptDateTime(a.completedAt)}</span>
@@ -833,23 +882,23 @@ const RecentQuizzes: React.FC = () => {
 
         {groupedAverages.length > 0 && (
           <div className="mb-6">
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">By topic (from your interests)</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-4">By topic (from your interests)</h2>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
               {groupedAverages.map((group) => (
-                <div key={group.interest} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{topicCategory(group.interest)}</p>
-                  <p className="text-sm font-semibold text-slate-900 mt-1">{group.interest}</p>
+                <div key={group.interest} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{topicCategory(group.interest)}</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white mt-1">{group.interest}</p>
                   <p className="text-2xl font-bold text-indigo-600 mt-1">{group.averageScore}%</p>
-                  <p className="text-xs text-slate-500 mt-1">{group.totalQuizzes} quizzes</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{group.totalQuizzes} quizzes</p>
                 </div>
               ))}
             </div>
             {averagesByCategory.length > 0 && (
               <div className="mt-6">
-                <h3 className="text-lg font-bold text-slate-900 mb-3">Grouped averages</h3>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-3">Grouped averages</h3>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {averagesByCategory.map((row) => (
-                    <div key={row.category} className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4">
+                    <div key={row.category} className="rounded-xl border border-indigo-100 dark:border-indigo-500/30 bg-indigo-50/50 p-4">
                       <p className="text-xs font-bold uppercase tracking-wide text-indigo-800">{row.category}</p>
                       <p className="text-2xl font-bold text-indigo-900 mt-1">{row.avg}%</p>
                       <p className="text-xs text-indigo-700/80">{row.quizzes} quiz attempt(s) in this bucket</p>
@@ -862,18 +911,18 @@ const RecentQuizzes: React.FC = () => {
         )}
 
         {sortedNewestFirst.length > 0 && (
-          <details className="bg-white rounded-2xl border border-slate-200 overflow-hidden group">
-            <summary className="px-5 py-4 cursor-pointer text-sm font-medium text-slate-700 hover:bg-slate-50 list-none flex items-center justify-between gap-2">
+          <details className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden group">
+            <summary className="px-5 py-4 cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-950 list-none flex items-center justify-between gap-2">
               <span>Attempt list &amp; result links</span>
-              <span className="text-xs font-normal text-slate-500 group-open:hidden">Show</span>
-              <span className="text-xs font-normal text-slate-500 hidden group-open:inline">Hide</span>
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 group-open:hidden">Show</span>
+              <span className="text-xs font-normal text-slate-500 dark:text-slate-400 hidden group-open:inline">Hide</span>
             </summary>
-            <div className="border-t border-slate-100 divide-y divide-slate-100">
+            <div className="border-t border-slate-100 dark:border-slate-800 divide-y divide-slate-100">
               {sortedNewestFirst.map((a) => (
                 <div key={a.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div>
-                    <p className="font-semibold text-slate-900">{a.interest || 'Quiz'}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="font-semibold text-slate-900 dark:text-white">{a.interest || 'Quiz'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       {formatAttemptDateTime(a.completedAt)} · {a.level} · {topicCategory(a.interest || '')}
                     </p>
                   </div>

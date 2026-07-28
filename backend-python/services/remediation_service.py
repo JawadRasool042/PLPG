@@ -272,6 +272,7 @@ def process_attempt_after_scoring(user_id: str, attempt_id: str) -> Dict[str, An
 
     if is_retake_quiz and is_passing(score):
         RemediationLesson.mark_passed_for_retake_quiz(user_id, quiz_id, attempt_id)
+        RemediationLesson.clear_all_locks(user_id)
         return {
             "passed": True,
             "passingScore": PASSING_SCORE,
@@ -282,6 +283,7 @@ def process_attempt_after_scoring(user_id: str, attempt_id: str) -> Dict[str, An
         }
 
     if is_passing(score):
+        RemediationLesson.clear_all_locks(user_id)
         return {
             "passed": True,
             "passingScore": PASSING_SCORE,
@@ -334,6 +336,7 @@ def build_status_payload(user_id: str, attempt_id: str) -> Dict[str, Any]:
 
     score = float(attempt.get("score") or 0)
     if is_passing(score):
+        RemediationLesson.clear_all_locks(user_id)
         lock = RemediationLesson.active_lock_for_user(user_id)
         can_continue = lock is None
         return {

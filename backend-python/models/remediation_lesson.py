@@ -163,6 +163,24 @@ class RemediationLesson:
         )
 
     @staticmethod
+    def clear_all_locks(user_id: str) -> None:
+        """Clear all active remediation locks for a user when they pass any quiz."""
+        RemediationLesson.get_collection().update_many(
+            {
+                "userId": user_id,
+                "passed": False,
+                "status": {"$in": ["pending", "studied"]},
+            },
+            {
+                "$set": {
+                    "passed": True,
+                    "status": "completed",
+                    "updatedAt": datetime.utcnow(),
+                }
+            },
+        )
+
+    @staticmethod
     def to_response(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if not doc:
             return None

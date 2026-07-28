@@ -151,6 +151,25 @@ export const getValidAccessToken = async (): Promise<string | null> => {
   return token;
 };
 
+/** Extracts the user ID safely from the valid token, handling base64url encoding correctly. */
+export const getUserIdFromToken = async (): Promise<string | null> => {
+  const token = await getValidAccessToken();
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    const decoded = JSON.parse(jsonPayload);
+    return decoded.id || decoded.sub || null;
+  } catch (e) {
+    return null;
+  }
+};
+
 /** JSON auth headers with a valid (refreshed) access token when available. */
 export const getAuthenticatedHeaders = async (): Promise<Record<string, string>> => {
   const token = await getValidAccessToken();

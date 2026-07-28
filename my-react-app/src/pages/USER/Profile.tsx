@@ -622,19 +622,19 @@ const Profile: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         {/* Header Section */}
         <div className="mb-8 sm:mb-12 md:mb-16 grid gap-6 lg:grid-cols-[2fr,1fr] items-start">
-          <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-lg border border-slate-100 hover:shadow-xl transition-shadow duration-300 transform hover:-translate-y-1 transition-transform">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-8 shadow-lg border border-slate-100 dark:border-slate-800 hover:shadow-xl transition-shadow duration-300 transform hover:-translate-y-1 transition-transform">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
               <div className="flex-1">
                 <p className="text-xs sm:text-sm font-semibold text-indigo-600 uppercase tracking-wider mb-2">Profile & Account</p>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-slate-900 mb-2">Welcome back, {profile.first_name}</h1>
-                <p className="text-sm sm:text-base text-slate-600 leading-relaxed max-w-2xl">Manage your identity, learning preferences, and account controls in one place.</p>
+                <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white mb-2">Welcome back, {profile.first_name}</h1>
+                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-2xl">Manage your identity, learning preferences, and account controls in one place.</p>
               </div>
               <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white px-4 sm:px-6 py-3 sm:py-4 shadow-lg transform hover:scale-105 transition-transform duration-300">
                 <div className="text-xs uppercase tracking-widest opacity-90 font-semibold">Completion</div>
                 <div className="text-3xl sm:text-4xl font-bold mt-1">{completenessScore()}%</div>
               </div>
             </div>
-            <div className="mt-6 h-2.5 w-full rounded-full bg-slate-200 overflow-hidden">
+            <div className="mt-6 h-2.5 w-full rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
               <div className="h-full bg-gradient-to-r from-indigo-600 to-purple-600 transition-all duration-500 ease-out" style={{ width: `${completenessScore()}%` }} />
             </div>
             <div className="mt-6 flex flex-wrap gap-2 sm:gap-3">
@@ -642,7 +642,7 @@ const Profile: React.FC = () => {
                 { label: 'Content', value: formData.content_format },
                 { label: 'Availability', value: `${formData.weekly_availability_hours || 'Set'}/week` }
               ].map((item, idx) => (
-                <span key={idx} className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-indigo-50 to-purple-50 text-slate-700 rounded-full text-xs sm:text-sm font-medium border border-indigo-100 hover:border-indigo-300 transition-colors duration-200">
+                <span key={idx} className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/40 dark:to-purple-900/40 text-slate-700 dark:text-slate-300 rounded-full text-xs sm:text-sm font-medium border border-indigo-100 dark:border-indigo-500/30 hover:border-indigo-300 transition-colors duration-200">
                   <span className="w-2 h-2 rounded-full bg-indigo-600"></span>
                   {item.label}: {item.value}
                 </span>
@@ -657,14 +657,14 @@ const Profile: React.FC = () => {
               { icon: '✓', label: 'Verification', value: profile.is_email_verified ? 'Verified' : 'Pending', color: profile.is_email_verified ? 'from-green-500 to-emerald-600' : 'from-amber-500 to-orange-600' },
               { icon: '👤', label: 'Account role', value: profile.role, color: 'from-slate-500 to-slate-600' }
             ].map((stat, idx) => (
-              <div key={idx} className="bg-white rounded-xl p-4 sm:p-5 shadow-md border border-slate-100 hover:shadow-lg hover:border-slate-200 transition-all duration-300 transform hover:-translate-y-1">
+              <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl p-4 sm:p-5 shadow-md border border-slate-100 dark:border-slate-800 hover:shadow-lg hover:border-slate-200 dark:border-slate-700 transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-gradient-to-br ${stat.color} flex items-center justify-center text-lg sm:text-xl shadow-md`}>
                     {stat.icon}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm text-slate-600 font-medium">{stat.label}</p>
-                    <p className="text-sm sm:text-base font-bold text-slate-900 truncate">{stat.value}</p>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium">{stat.label}</p>
+                    <p className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">{stat.value}</p>
                   </div>
                 </div>
               </div>
@@ -695,7 +695,7 @@ const Profile: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           {/* Sidebar */}
           <aside className="lg:col-span-1 space-y-6">
-            <div className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
                 {profile.avatar ? (
                   <img src={profile.avatar} alt="Profile" className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shadow-md" />
@@ -705,8 +705,8 @@ const Profile: React.FC = () => {
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-lg sm:text-xl font-bold text-slate-900">{profile.first_name} {profile.last_name}</h3>
-                  <p className="text-sm text-slate-600 truncate">{profile.email}</p>
+                  <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">{profile.first_name} {profile.last_name}</h3>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 truncate">{profile.email}</p>
                   <div className="flex flex-wrap gap-2 mt-3">
                     <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-semibold">{profile.role}</span>
                     <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${profile.is_email_verified ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -716,15 +716,15 @@ const Profile: React.FC = () => {
                 </div>
               </div>
 
-              <dl className="mt-6 space-y-3 text-sm border-t border-slate-100 pt-6">
+              <dl className="mt-6 space-y-3 text-sm border-t border-slate-100 dark:border-slate-800 pt-6">
                 {[
                   { label: 'Member since', value: formatDate(profile.created_at) },
                   { label: 'Email status', value: profile.is_email_verified ? 'Verified' : 'Unverified' },
                   { label: 'User ID', value: profile.id.slice(0, 8) + '...' }
                 ].map((item, idx) => (
                   <div key={idx} className="flex justify-between items-start">
-                    <dt className="text-slate-600 font-medium">{item.label}</dt>
-                    <dd className="text-slate-900 font-semibold text-right">{item.value}</dd>
+                    <dt className="text-slate-600 dark:text-slate-300 font-medium">{item.label}</dt>
+                    <dd className="text-slate-900 dark:text-white font-semibold text-right">{item.value}</dd>
                   </div>
                 ))}
               </dl>
@@ -739,7 +739,7 @@ const Profile: React.FC = () => {
                     <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2.5 sm:py-3 bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-lg hover:from-emerald-700 hover:to-green-700 shadow-md hover:shadow-lg transform transition-all duration-200 hover:scale-105 font-semibold text-sm sm:text-base disabled:opacity-60 disabled:cursor-not-allowed">
                       {saving ? 'Saving…' : 'Save'}
                     </button>
-                    <button onClick={handleCancel} className="px-4 py-2.5 sm:py-3 border-2 border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 hover:border-slate-400 transition-all duration-200 font-semibold text-sm sm:text-base">
+                    <button onClick={handleCancel} className="px-4 py-2.5 sm:py-3 border-2 border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-950 hover:border-slate-400 transition-all duration-200 font-semibold text-sm sm:text-base">
                       Cancel
                     </button>
                   </>
@@ -750,10 +750,10 @@ const Profile: React.FC = () => {
 
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6 sm:space-y-8">
-            <section className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <section className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="mb-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Identity</h2>
-                <p className="text-sm text-slate-600 mt-2">Keep your personal information accurate and up-to-date.</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Identity</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">Keep your personal information accurate and up-to-date.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 {[
@@ -761,23 +761,23 @@ const Profile: React.FC = () => {
                   { name: 'last_name', label: 'Last name', type: 'text' },
                 ].map((field) => (
                   <div key={field.name}>
-                    <label className="block text-sm font-semibold text-slate-900 mb-2">{field.label}</label>
+                    <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">{field.label}</label>
                     <input
                       type={field.type}
                       name={field.name}
                       value={formData[field.name as keyof typeof formData] as string}
                       onChange={handleInputChange}
                       disabled={!isEditing}
-                      className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 dark:bg-slate-950 disabled:cursor-not-allowed"
                     />
                   </div>
                 ))}
                 
                 {/* Phone Number Field with Validation */}
                 <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">
                     Phone
-                    <span className="text-xs text-slate-500 ml-2">(Max 11 digits)</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">(Max 11 digits)</span>
                   </label>
                   <input
                     type="tel"
@@ -787,10 +787,10 @@ const Profile: React.FC = () => {
                     disabled={!isEditing}
                     placeholder="03001234567"
                     maxLength={11}
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 dark:bg-slate-950 disabled:cursor-not-allowed"
                   />
                   {formData.phone && (
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                       {formData.phone.length}/11 digits
                     </p>
                   )}
@@ -798,7 +798,7 @@ const Profile: React.FC = () => {
 
                 {/* Location Field with Autocomplete */}
                 <div className="relative">
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">Location</label>
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">Location</label>
                   <input
                     type="text"
                     name="location"
@@ -815,18 +815,18 @@ const Profile: React.FC = () => {
                     }}
                     disabled={!isEditing}
                     placeholder="Enter country name"
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 dark:bg-slate-950 disabled:cursor-not-allowed"
                   />
                   
                   {/* Location Dropdown */}
                   {showLocationDropdown && locationSuggestions.length > 0 && isEditing && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border-2 border-indigo-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-900 border-2 border-indigo-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                       {locationSuggestions.map((location, index) => (
                         <button
                           key={index}
                           type="button"
                           onClick={() => selectLocation(location)}
-                          className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors duration-150 text-sm text-slate-700 hover:text-indigo-700 font-medium border-b border-slate-100 last:border-0"
+                          className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors duration-150 text-sm text-slate-700 dark:text-slate-300 hover:text-indigo-700 font-medium border-b border-slate-100 dark:border-slate-800 last:border-0"
                         >
                           {location}
                         </button>
@@ -836,37 +836,37 @@ const Profile: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">Date of birth</label>
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">Date of birth</label>
                   <input
                     type="date"
                     name="date_of_birth"
                     value={formData.date_of_birth}
                     onChange={handleInputChange}
                     disabled={!isEditing}
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 dark:bg-slate-950 disabled:cursor-not-allowed"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">Bio</label>
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">Bio</label>
                   <textarea
                     name="bio"
                     value={formData.bio}
                     onChange={handleInputChange}
                     disabled={!isEditing}
                     rows={3}
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200 disabled:bg-slate-50 dark:bg-slate-950 disabled:cursor-not-allowed"
                     placeholder="Brief professional summary"
                   />
                 </div>
               </div>
             </section>
 
-            <section className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 space-y-6">
+            <section className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 space-y-6">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Learning Profile</h2>
-                  <p className="text-sm text-slate-600 mt-2">
+                  <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Learning Profile</h2>
+                  <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">
                     Learning level is set automatically from your quiz scores and volume. Other preferences here still
                     save instantly — no need to press Save.
                   </p>
@@ -893,7 +893,7 @@ const Profile: React.FC = () => {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                  <label className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
+                  <label className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                     Learning level
                     <span className="rounded-md bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800">
                       System
@@ -902,8 +902,8 @@ const Profile: React.FC = () => {
                   <div className="min-h-[52px] rounded-lg border-2 border-violet-200/90 bg-gradient-to-br from-violet-50/80 to-slate-50 px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-base font-bold text-slate-900">{formData.learning_level}</p>
-                        <p className="mt-1 text-xs leading-relaxed text-slate-600">{performanceLearning.detail}</p>
+                        <p className="text-base font-bold text-slate-900 dark:text-white">{formData.learning_level}</p>
+                        <p className="mt-1 text-xs leading-relaxed text-slate-600 dark:text-slate-300">{performanceLearning.detail}</p>
                       </div>
                       {timelineLoading && !learningSignalsLoaded ? (
                         <span className="shrink-0 text-xs font-medium text-violet-700">Analyzing…</span>
@@ -912,7 +912,7 @@ const Profile: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">Content format</label>
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">Content format</label>
                   <select
                     value={formData.content_format}
                     onChange={(e) =>
@@ -921,7 +921,7 @@ const Profile: React.FC = () => {
                         content_format: e.target.value as ProfileData['content_format'],
                       }))
                     }
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
                   >
                     {(['Video', 'Text', 'Projects', 'Mixed'] as const).map((opt) => (
                       <option key={opt} value={opt}>
@@ -931,20 +931,20 @@ const Profile: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold text-slate-900 mb-2">Weekly availability (hours)</label>
+                  <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-2">Weekly availability (hours)</label>
                   <input
                     type="number"
                     min={0}
                     max={80}
                     value={formData.weekly_availability_hours}
                     onChange={(e) => setFormData((prev) => ({ ...prev, weekly_availability_hours: e.target.value }))}
-                    className="w-full rounded-lg border-2 border-slate-200 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
+                    className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 px-4 py-3 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 transition-all duration-200"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-900 mb-3">Learning goals</label>
+                <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-3">Learning goals</label>
                 <div className="flex flex-wrap gap-2">
                   {learningGoalOptions.map((goal) => {
                     const active = formData.learning_goals.includes(goal);
@@ -956,7 +956,7 @@ const Profile: React.FC = () => {
                         className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
                           active
                             ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md ring-2 ring-indigo-200/60'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-2 ring-transparent'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:bg-slate-700 ring-2 ring-transparent'
                         }`}
                       >
                         {goal}
@@ -967,7 +967,7 @@ const Profile: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-900 mb-3">Focus domains</label>
+                <label className="block text-sm font-semibold text-slate-900 dark:text-white mb-3">Focus domains</label>
                 <div className="flex flex-wrap gap-2">
                   {focusDomainOptions.map((domain) => {
                     const active = formData.focus_domains.includes(domain);
@@ -979,7 +979,7 @@ const Profile: React.FC = () => {
                         className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98] ${
                           active
                             ? 'bg-gradient-to-r from-emerald-600 to-green-600 text-white shadow-md ring-2 ring-emerald-200/60'
-                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 ring-2 ring-transparent'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:bg-slate-700 ring-2 ring-transparent'
                         }`}
                       >
                         {domain}
@@ -990,10 +990,10 @@ const Profile: React.FC = () => {
               </div>
             </section>
 
-            <section className="bg-white border border-slate-100 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+            <section className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 sm:p-8 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
               <div className="mb-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Account Summary</h2>
-                <p className="text-sm text-slate-600 mt-2">Core account metadata and verification status.</p>
+                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">Account Summary</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300 mt-2">Core account metadata and verification status.</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 {[
@@ -1002,21 +1002,21 @@ const Profile: React.FC = () => {
                   { label: 'User ID', value: profile.id.slice(0, 12) + '...' },
                   { label: 'Member since', value: formatDate(profile.created_at) }
                 ].map((item, idx) => (
-                  <div key={idx} className="p-4 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 hover:border-slate-300 transition-colors duration-200">
-                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">{item.label}</p>
-                    <p className="text-sm sm:text-base font-bold text-slate-900 truncate">{item.value}</p>
-                    {item.status && <p className="text-xs text-slate-600 mt-1">{item.status}</p>}
+                  <div key={idx} className="p-4 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:border-slate-600 transition-colors duration-200">
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider mb-1">{item.label}</p>
+                    <p className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">{item.value}</p>
+                    {item.status && <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">{item.status}</p>}
                   </div>
                 ))}
               </div>
             </section>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Recent activity</p>
-                    <h3 className="text-lg font-bold text-slate-900 mt-1">Learning timeline</h3>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Recent activity</p>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-1">Learning timeline</h3>
                   </div>
                   <span
                     className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
@@ -1036,32 +1036,32 @@ const Profile: React.FC = () => {
                 </div>
                 <div className="space-y-4">
                   {mergedTimelineRows.length === 0 && !timelineLoading && (
-                    <p className="text-sm text-slate-500 pl-6">
+                    <p className="text-sm text-slate-500 dark:text-slate-400 pl-6">
                       No activity yet. Finish a quiz or adjust your learning profile — updates appear here in real time.
                     </p>
                   )}
                   {mergedTimelineRows.map((item) => (
-                    <div key={item.id} className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+                    <div key={item.id} className="flex items-start gap-3 pb-4 border-b border-slate-100 dark:border-slate-800 last:border-0 last:pb-0">
                       <div className="mt-1.5 h-3 w-3 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex-shrink-0" aria-hidden />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                        <p className="text-xs text-slate-600 mt-0.5 break-words">{item.detail}</p>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 break-words">{item.detail}</p>
                       </div>
-                      <p className="text-xs text-slate-500 flex-shrink-0 tabular-nums">{formatRelativeTime(item.at)}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 flex-shrink-0 tabular-nums">{formatRelativeTime(item.at)}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col">
+              <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-6 shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col">
                 <div className="mb-4">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Quick links</p>
-                  <h3 className="text-lg font-bold text-slate-900 mt-1">Account & learning</h3>
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wider">Quick links</p>
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mt-1">Account & learning</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-3 flex-1">
                   <button
                     onClick={() => navigate('/settings')}
-                    className="px-4 py-3 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 font-semibold text-sm hover:from-indigo-100 hover:to-purple-100 border border-indigo-200 hover:border-indigo-300 transition-all duration-200 transform hover:scale-105"
+                    className="px-4 py-3 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/40 dark:to-purple-900/40 text-indigo-700 font-semibold text-sm hover:from-indigo-100 hover:to-purple-100 border border-indigo-200 hover:border-indigo-300 transition-all duration-200 transform hover:scale-105"
                   >
                     ⚙️ Settings
                   </button>
@@ -1072,7 +1072,7 @@ const Profile: React.FC = () => {
                     📝 Quizzes
                   </button>
                 </div>
-                <div className="mt-4 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-900 px-4 py-3 text-xs sm:text-sm border border-indigo-200">
+                <div className="mt-4 rounded-lg bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/40 dark:to-purple-900/40 text-indigo-900 px-4 py-3 text-xs sm:text-sm border border-indigo-200">
                   <p className="font-semibold">💡 Pro tip</p>
                   <p className="mt-1">Keep your preferences fresh for better recommendations.</p>
                 </div>

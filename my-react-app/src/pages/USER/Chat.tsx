@@ -398,11 +398,11 @@ const Chat: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-gray-200 overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
           <div className="flex h-full">
 
             {/* Sidebar */}
-            <div className="w-80 border-r border-gray-200 flex flex-col bg-white">
+            <div className="w-80 border-r border-gray-200 flex flex-col bg-white dark:bg-slate-900">
               
               {/* Tabs */}
               <div className="flex border-b border-gray-200">
@@ -442,7 +442,7 @@ const Chat: React.FC = () => {
                     <>
                       {instructors.length > 0 && (
                       <div>
-                        <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100">
+                        <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 dark:border-indigo-500/30">
                           <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Teachers ({instructors.length})</span>
                         </div>
                         {instructors.map(c => <ContactItem key={c._id} contact={c} selected={selected?._id === c._id} onClick={() => setSelected(c)} initials={initials(c)} color="from-indigo-500 to-purple-600" />)}
@@ -450,7 +450,7 @@ const Chat: React.FC = () => {
                     )}
                     {students.length > 0 && (
                       <div>
-                        <div className="px-4 py-2 bg-green-50 border-b border-green-100">
+                        <div className="px-4 py-2 bg-green-50 border-b border-green-100 dark:border-emerald-500/30">
                           <span className="text-xs font-bold text-green-700 uppercase tracking-wide">Students ({students.length})</span>
                         </div>
                         {students.map(c => <ContactItem key={c._id} contact={c} selected={selected?._id === c._id} onClick={() => setSelected(c)} initials={initials(c)} color="from-green-500 to-emerald-600" />)}
@@ -481,7 +481,7 @@ const Chat: React.FC = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
                             </summary>
-                            <div className="bg-white">
+                            <div className="bg-white dark:bg-slate-900">
                               {joined.map(c => (
                                 <div key={c._id} 
                                   onClick={() => setSelectedCommunity(c)}
@@ -519,7 +519,7 @@ const Chat: React.FC = () => {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                               </svg>
                             </summary>
-                            <div className="bg-white">
+                            <div className="bg-white dark:bg-slate-900">
                               {other.map(c => (
                                 <div key={c._id} 
                                   className="w-full p-4 flex items-start gap-3 transition-colors border-b border-gray-100 opacity-75 cursor-default hover:bg-gray-50"
@@ -559,7 +559,7 @@ const Chat: React.FC = () => {
               selected ? (
                 <div className="flex-1 flex flex-col">
                   {/* Direct Message Chat Code */}
-                  <div className="p-4 border-b border-gray-200 flex items-center gap-3 bg-white">
+                  <div className="p-4 border-b border-gray-200 flex items-center gap-3 bg-white dark:bg-slate-900">
                     <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm">
                       {initials(selected)}
                     </div>
@@ -582,7 +582,7 @@ const Chat: React.FC = () => {
                       return (
                         <div key={msg._id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'} group`}>
                           <div className="max-w-xs lg:max-w-md">
-                            <div className={`px-4 py-2 rounded-2xl text-sm ${isOwn ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border border-gray-200 rounded-bl-sm'}`}>
+                            <div className={`px-4 py-2 rounded-2xl text-sm ${isOwn ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white dark:bg-slate-900 text-gray-900 border border-gray-200 rounded-bl-sm'}`}>
                               {msg.text && !msg.fileUrl && <p className="leading-relaxed">{msg.text}</p>}
                               {msg.fileUrl && (
                                 <div>
@@ -628,7 +628,7 @@ const Chat: React.FC = () => {
                     <div ref={bottomRef} />
                   </div>
 
-                  <div className="p-4 border-t border-gray-200 bg-white">
+                  <div className="p-4 border-t border-gray-200 bg-white dark:bg-slate-900">
                     <div className="flex items-center gap-2">
                       <input type="file" ref={fileInputRef} className="hidden" accept="image/*,.pdf,.doc,.docx,.txt,.zip,.mp4,.mp3" onChange={handleFileSelect} />
                       <button

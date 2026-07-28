@@ -453,7 +453,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
         </div>
       )}
       {/* Header */}
-      <div className="p-4 border-b border-gray-200 bg-white flex justify-between items-center shadow-sm">
+      <div className="p-4 border-b border-gray-200 bg-white dark:bg-slate-900 flex justify-between items-center shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
         <div>
           <h2 className="font-bold text-gray-900 text-lg"># {community.name}</h2>
           <p className="text-xs text-green-600 font-medium">
@@ -536,7 +536,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
                   className={`px-4 py-2.5 text-sm relative ${
                     isOwn
                       ? 'bg-indigo-600 text-white rounded-2xl rounded-br-sm'
-                      : 'bg-white text-gray-900 border border-gray-200 rounded-2xl rounded-bl-sm shadow-sm'
+                      : 'bg-white dark:bg-slate-900 text-gray-900 border border-gray-200 rounded-2xl rounded-bl-sm shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]'
                   }`}
                 >
                   {msg.text && !msg.fileUrl && <p className="leading-relaxed">{renderText(msg.text)}</p>}
@@ -594,14 +594,14 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
                       onClick={() =>
                         setEmojiPickerMsgId(prev => (prev === msg._id ? null : msg._id))
                       }
-                      className="p-1.5 bg-white shadow-sm rounded-full text-gray-500 hover:bg-gray-50 border border-gray-200 text-xs"
+                      className="p-1.5 bg-white dark:bg-slate-900 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] rounded-full text-gray-500 hover:bg-gray-50 border border-gray-200 text-xs"
                       title="React"
                     >
                       😊
                     </button>
                     <button
                       onClick={() => setReplyTo(msg)}
-                      className="p-1.5 bg-white shadow-sm rounded-full text-gray-500 hover:bg-gray-50 border border-gray-200"
+                      className="p-1.5 bg-white dark:bg-slate-900 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] rounded-full text-gray-500 hover:bg-gray-50 border border-gray-200"
                       title="Reply"
                     >
                       <Reply className="w-3 h-3" />
@@ -611,7 +611,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
                   {/* Emoji picker dropdown */}
                   {emojiPickerMsgId === msg._id && (
                     <div
-                      className={`absolute z-10 bg-white border border-gray-200 rounded-xl shadow-lg p-2 flex gap-1 ${
+                      className={`absolute z-10 bg-white dark:bg-slate-900 border border-gray-200 rounded-xl shadow-lg p-2 flex gap-1 ${
                         isOwn ? '-left-44 top-0' : '-right-44 top-0'
                       }`}
                     >
@@ -638,7 +638,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
                         className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                           users.includes(myId)
                             ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
-                            : 'bg-white border-gray-200 hover:bg-gray-50'
+                            : 'bg-white dark:bg-slate-900 border-gray-200 hover:bg-gray-50'
                         }`}
                       >
                         {emoji} {users.length}
@@ -668,15 +668,15 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
       )}
 
       {/* Input Area */}
-      <div className="p-4 bg-white border-t border-gray-200 relative">
+      <div className="p-4 bg-white dark:bg-slate-900 border-t border-gray-200 relative">
         {/* @Mention dropdown */}
         {showMentions && filteredMembers.length > 0 && (
-          <div className="absolute bottom-full left-4 right-4 mb-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-40 overflow-y-auto z-20">
+          <div className="absolute bottom-full left-4 right-4 mb-1 bg-white dark:bg-slate-900 border border-gray-200 rounded-xl shadow-lg max-h-40 overflow-y-auto z-20">
             {filteredMembers.slice(0, 8).map(m => (
               <button
                 key={m._id}
                 onClick={() => insertMention(m)}
-                className="w-full px-4 py-2 flex items-center gap-2 hover:bg-indigo-50 text-left text-sm"
+                className="w-full px-4 py-2 flex items-center gap-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 text-left text-sm"
               >
                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-semibold">
                   {m.firstName?.[0] || '?'}
@@ -795,7 +795,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
           <button
             onClick={sendMessage}
             disabled={(!text.trim() && !pendingFile) || uploading}
-            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm flex-shrink-0"
+            className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm font-medium shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] flex-shrink-0"
           >
             {uploading ? 'Sending...' : 'Send'}
           </button>
