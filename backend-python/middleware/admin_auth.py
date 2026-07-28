@@ -156,7 +156,13 @@ def authorize(*required_permissions):
             
             # Super admin has all permissions
             admin_role = admin.get('role', {})
+            is_super_admin = False
             if isinstance(admin_role, dict) and admin_role.get('name') == 'super_admin':
+                is_super_admin = True
+            elif isinstance(admin_role, str) and admin_role == 'super_admin':
+                is_super_admin = True
+                
+            if is_super_admin:
                 return f(*args, **kwargs)
             
             # Check if admin has required permissions
