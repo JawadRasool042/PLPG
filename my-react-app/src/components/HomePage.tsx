@@ -43,7 +43,7 @@ const HomePage = () => {
                   <>
                     <Link
                       to="/register"
-                      className="group w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-indigo-600 border border-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 hover:border-indigo-700 hover:shadow-lg transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      className="group w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl shadow-xl hover:shadow-2xl hover:from-indigo-500 hover:to-purple-500 transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       Get Started Free
                       <svg className="ml-2 w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -52,7 +52,7 @@ const HomePage = () => {
                     </Link>
                     <Link
                       to="/login"
-                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-400 hover:shadow transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-gray-800 bg-white/80 backdrop-blur-md border border-gray-200 rounded-xl shadow-lg hover:bg-white hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       Login
                     </Link>
@@ -61,7 +61,7 @@ const HomePage = () => {
                   <>
                     <Link
                       to="/home"
-                      className="group w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-indigo-600 border border-indigo-600 rounded-lg shadow-md hover:bg-indigo-700 hover:border-indigo-700 hover:shadow-lg transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      className="group w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl shadow-xl hover:shadow-2xl hover:from-indigo-500 hover:to-purple-500 transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       Go to Home
                       <svg className="ml-2 w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,7 +70,7 @@ const HomePage = () => {
                     </Link>
                     <Link
                       to="/quizzes"
-                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-400 hover:shadow transform hover:scale-105 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                      className="w-full sm:w-auto inline-flex items-center justify-center px-8 py-4 text-base font-semibold text-gray-800 bg-white/80 backdrop-blur-md border border-gray-200 rounded-xl shadow-lg hover:bg-white hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
                       View Quizzes
                     </Link>
@@ -115,7 +115,7 @@ const HomePage = () => {
                   className="relative rounded-3xl shadow-2xl transform transition-all duration-500 group-hover:scale-105 group-hover:shadow-3xl"
                 />
                 {/* Floating Cards */}
-                <div className="absolute -bottom-6 -left-6 bg-white p-4 rounded-xl shadow-xl animate-float hover:shadow-2xl transition-shadow duration-300 cursor-pointer">
+                <div className="absolute -bottom-6 -left-6 bg-white/80 backdrop-blur-md border border-white/50 p-4 rounded-2xl shadow-2xl animate-float hover:scale-105 transition-all duration-300 cursor-pointer">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                       <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -128,7 +128,7 @@ const HomePage = () => {
                     </div>
                   </div>
                 </div>
-                <div className="absolute -top-6 -right-6 bg-white p-4 rounded-xl shadow-xl animate-float animation-delay-2000">
+                <div className="absolute -top-6 -right-6 bg-white/80 backdrop-blur-md border border-white/50 p-4 rounded-2xl shadow-2xl animate-float animation-delay-2000 hover:scale-105 transition-all duration-300 cursor-pointer">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center">
                       <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,7 +148,7 @@ const HomePage = () => {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-20 sm:py-28 bg-white relative">
+      <section id="features" className="py-20 sm:py-28 bg-slate-50 relative">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <div className="inline-flex items-center justify-center px-4 py-1.5 bg-indigo-50 border border-indigo-100 rounded-full mb-4">
@@ -164,7 +164,7 @@ const HomePage = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {/* Feature Card 1 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-md hover:shadow-2xl border border-gray-100 hover:border-indigo-200 transform transition-all duration-300 hover:-translate-y-2 cursor-pointer">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-md hover:shadow-2xl border border-gray-100 hover:border-indigo-200 transform transition-all duration-300 hover:-translate-y-2 cursor-pointer">
               <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center mb-6 transform transition-all duration-300 group-hover:scale-110 group-hover:rotate-6 shadow-md group-hover:shadow-lg">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -199,7 +199,7 @@ const HomePage = () => {
             </div>
 
             {/* Feature Card 2 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-md hover:shadow-2xl border border-gray-100 hover:border-purple-200 transform transition-all duration-300 hover:-translate-y-2 cursor-pointer">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-md hover:shadow-2xl border border-gray-100 hover:border-purple-200 transform transition-all duration-300 hover:-translate-y-2 cursor-pointer">
               <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mb-6 transform transition-all duration-300 group-hover:scale-110 group-hover:rotate-6 shadow-md group-hover:shadow-lg">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -234,7 +234,7 @@ const HomePage = () => {
             </div>
 
             {/* Feature Card 3 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-blue-200 transform hover:-translate-y-2 transition-all duration-300">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-blue-200 transform hover:-translate-y-2 transition-all duration-300">
               <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
@@ -269,7 +269,7 @@ const HomePage = () => {
             </div>
 
             {/* Feature Card 4 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-green-200 transform hover:-translate-y-2 transition-all duration-300">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-green-200 transform hover:-translate-y-2 transition-all duration-300">
               <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -304,7 +304,7 @@ const HomePage = () => {
             </div>
 
             {/* Feature Card 5 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-orange-200 transform hover:-translate-y-2 transition-all duration-300">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-orange-200 transform hover:-translate-y-2 transition-all duration-300">
               <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
@@ -339,7 +339,7 @@ const HomePage = () => {
             </div>
 
             {/* Feature Card 6 */}
-            <div className="group bg-white p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-teal-200 transform hover:-translate-y-2 transition-all duration-300">
+            <div className="group bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-lg hover:shadow-2xl border border-gray-100 hover:border-teal-200 transform hover:-translate-y-2 transition-all duration-300">
               <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl flex items-center justify-center mb-6 group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />

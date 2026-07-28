@@ -56,6 +56,14 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   const [hasMore, setHasMore] = useState(false);
   const [totalMessages, setTotalMessages] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'error'|'success'|'info'} | null>(null);
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // @mention state
   const [members, setMembers] = useState<Member[]>([]);
@@ -148,6 +156,11 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
 
     s.on('connect', () => {
       s.emit('join_community', { community_id: community._id, token });
+      setToast({ message: 'Connected to chat', type: 'success' });
+    });
+
+    s.on('disconnect', (reason) => {
+      setToast({ message: `Disconnected from chat (${reason})`, type: 'error' });
     });
 
     s.on('new_message', (msg: Message) => {
@@ -187,6 +200,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
 
     s.on('connect_error', (err: Error) => {
       console.error('Socket connection error:', err.message);
+      setToast({ message: 'Connection error. Retrying...', type: 'error' });
     });
 
     return () => {
@@ -310,12 +324,12 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
           });
         } else {
           setText(messageText); // Restore on failure
-          alert(json.message || 'Upload failed');
+          setToast({ message: json.message || 'Upload failed', type: 'error' });
         }
       } catch (err) {
         console.error(err);
         setText(messageText); // Restore on failure
-        alert('Upload failed. Please try again.');
+        setToast({ message: 'Upload failed. Please try again.', type: 'error' });
       } finally {
         setUploading(false);
         setUploadProgress(null);
@@ -353,7 +367,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
         console.error('Failed to get token for message', err);
         setMessages(prev => prev.filter(m => m._id !== tempId));
         setText(messageText); // Restore on failure
-        alert('Failed to send message. Please log in again.');
+        setToast({ message: 'Failed to send message. Please log in again.', type: 'error' });
       }
     }
 
@@ -381,7 +395,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      alert('File is too large. Maximum size is 10MB.');
+      setToast({ message: 'File is too large. Maximum size is 10MB.', type: 'error' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -431,7 +445,13 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-gray-50">
+    <div className="flex-1 flex flex-col h-full bg-gray-50 relative">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`absolute top-16 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg font-medium text-xs text-white transition-all duration-300 animate-in fade-in slide-in-from-top-2 ${toast.type === 'error' ? 'bg-red-500' : toast.type === 'success' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+          {toast.message}
+        </div>
+      )}
       {/* Header */}
       <div className="p-4 border-b border-gray-200 bg-white flex justify-between items-center shadow-sm">
         <div>

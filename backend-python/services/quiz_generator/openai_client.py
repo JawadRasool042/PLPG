@@ -79,19 +79,28 @@ class OpenAIClient:
         raise OpenAIError("Invalid response structure")
 
     def _generate_with_fallback(self, prompt: str, max_tokens: int) -> str:
-        try:
-            _, text = chat_completions(
-                messages=[
-                    {"role": "system", "content": "Return ONLY valid JSON."},
-                    {"role": "user", "content": prompt},
-                ],
-                api_key=self.api_key,
-                model=self.model,
-                max_tokens=max_tokens,
-                temperature=0.7,
-                timeout=OPENAI_REQUEST_TIMEOUT_SECONDS,
-                fallback_models=self._fallback_models,
-            )
-            return text
-        except RuntimeError as exc:
-            raise OpenAIError(str(exc)) from exc
+        import time
+        max_retries = 3
+        base_delay = 1.0
+
+        for attempt in range(max_retries):
+            try:
+                _, text = chat_completions(
+                    messages=[
+                        {"role": "system", "content": "Return ONLY valid JSON."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    api_key=self.api_key,
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    temperature=0.7,
+                    timeout=OPENAI_REQUEST_TIMEOUT_SECONDS,
+                    fallback_models=self._fallback_models,
+                )
+                return text
+            except RuntimeError as exc:
+                logger.error(f"OpenAI completion failed on attempt {attempt + 1}/{max_retries}: {exc}")
+                if attempt == max_retries - 1:
+                    raise OpenAIError(f"Failed after {max_retries} attempts: {exc}") from exc
+                time.sleep(base_delay * (2 ** attempt))
+        raise OpenAIError("Unexpected retry loop exit")

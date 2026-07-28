@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
 import { io, Socket } from 'socket.io-client';
 import { Users, MessageSquare, Paperclip, X } from 'lucide-react';
+import LoadingSkeleton from '../../components/LoadingSkeleton';
 
 import { getValidAccessToken } from '../../services/authService';
 
@@ -59,7 +60,16 @@ let cachedMyCommunities: string[] | null = null;
 
 const Chat: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'direct' | 'communities'>('direct');
-  
+  const [toast, setToast] = useState<{message: string, type: 'error'|'success'} | null>(null);
+
+  // auto-hide toast
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   // Direct Messages State
   const [contacts, setContacts] = useState<Contact[]>(cachedContacts || []);
   const [isLoadingContacts, setIsLoadingContacts] = useState(!cachedContacts);
@@ -237,12 +247,12 @@ const Chat: React.FC = () => {
             loadContacts();
           } else {
             setText(messageText); // Restore text on failure
-            alert(json.message || 'Upload failed');
+            setToast({ message: json.message || 'Upload failed', type: 'error' });
           }
         } catch (err) {
           console.error(err);
           setText(messageText); // Restore text on failure
-          alert('Upload failed. Please try again.');
+          setToast({ message: 'Upload failed. Please try again.', type: 'error' });
         } finally {
           setUploading(false);
           setUploadProgress(null);
@@ -279,7 +289,7 @@ const Chat: React.FC = () => {
           // Remove temp message
           setMessages(prev => prev.filter(m => m._id !== tempId));
           setText(messageText); // Restore text on failure
-          alert('Failed to send message. Please try again.');
+          setToast({ message: 'Failed to send message. Please try again.', type: 'error' });
         }
       }
     } finally {
@@ -293,7 +303,7 @@ const Chat: React.FC = () => {
 
     const maxSize = 10 * 1024 * 1024;
     if (file.size > maxSize) {
-      alert('File is too large. Maximum size is 10MB.');
+      setToast({ message: 'File is too large. Maximum size is 10MB.', type: 'error' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -332,18 +342,19 @@ const Chat: React.FC = () => {
       const res = await apiFetch(`/community/${cId}/${isJoined ? 'leave' : 'join'}`, { method: 'POST' });
       
       if (res.success) {
+        setToast({ message: isJoined ? 'Left community' : 'Joined community', type: 'success' });
         setTimeout(() => {
           if (isJoined && selectedCommunity?._id === cId) setSelectedCommunity(null);
           loadCommunities();
           setTransitioningId(null);
         }, 1000);
       } else {
-        alert(res.message || 'Failed to update community membership');
+        setToast({ message: res.message || 'Failed to update community membership', type: 'error' });
         setTransitioningId(null);
       }
     } catch (err) {
       console.error(err);
-      alert('Network error. Failed to join community.');
+      setToast({ message: 'Network error. Failed to join community.', type: 'error' });
       setTransitioningId(null);
     }
   };
@@ -373,6 +384,12 @@ const Chat: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 pt-20 pb-12 px-4 sm:px-6 lg:px-8">
+      {/* Toast Notification */}
+      {toast && (
+        <div className={`fixed top-24 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-full shadow-xl font-medium text-sm text-white transition-all duration-300 animate-in fade-in slide-in-from-top-4 ${toast.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
+          {toast.message}
+        </div>
+      )}
       <div className="max-w-7xl mx-auto">
         <div className="mb-6 flex items-end justify-between">
           <div>
@@ -418,7 +435,9 @@ const Chat: React.FC = () => {
               <div className="flex-1 overflow-y-auto">
                 {activeTab === 'direct' ? (
                   isLoadingContacts ? (
-                    <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Loading contacts...</div>
+                    <div className="p-4 space-y-4">
+                      <LoadingSkeleton variant="text" count={3} />
+                    </div>
                   ) : (
                     <>
                       {instructors.length > 0 && (
@@ -444,7 +463,9 @@ const Chat: React.FC = () => {
                   )
                 ) : (
                   isLoadingCommunities ? (
-                    <div className="p-8 text-center text-gray-400 text-sm animate-pulse">Loading communities...</div>
+                    <div className="p-4 space-y-4">
+                      <LoadingSkeleton variant="text" count={3} />
+                    </div>
                   ) : (
                     <>
                       {(() => {

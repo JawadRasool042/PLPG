@@ -153,33 +153,37 @@ def handle_join(data):
     if not community_id or not user_id:
         return
 
-    # Verify membership
-    members_col = get_collection('community_members')
-    membership = members_col.find_one({'user_id': user_id, 'community_id': community_id})
-    if not membership:
-        print(f"Join rejected: {user_id} not a member of {community_id}")
-        emit('error', {'message': 'Not a member of this community'})
-        return
+    try:
+        # Verify membership
+        members_col = get_collection('community_members')
+        membership = members_col.find_one({'user_id': user_id, 'community_id': community_id})
+        if not membership:
+            print(f"Join rejected: {user_id} not a member of {community_id}")
+            emit('error', {'message': 'Not a member of this community'})
+            return
 
-    join_room(community_id)
+        join_room(community_id)
 
-    # Track online presence
-    if community_id not in online_users:
-        online_users[community_id] = {}
-    online_users[community_id][user_id] = request.sid
-    user_communities.setdefault(request.sid, set()).add(community_id)
+        # Track online presence
+        if community_id not in online_users:
+            online_users[community_id] = {}
+        online_users[community_id][user_id] = request.sid
+        user_communities.setdefault(request.sid, set()).add(community_id)
 
-    # Update last_read_at
-    members_col.update_one(
-        {'user_id': user_id, 'community_id': community_id},
-        {'$set': {'last_read_at': datetime.utcnow()}}
-    )
+        # Update last_read_at
+        members_col.update_one(
+            {'user_id': user_id, 'community_id': community_id},
+            {'$set': {'last_read_at': datetime.utcnow()}}
+        )
 
-    emit('user_status', {
-        'user_id': user_id,
-        'status': 'online',
-        'online_count': len(online_users[community_id])
-    }, room=community_id)
+        emit('user_status', {
+            'user_id': user_id,
+            'status': 'online',
+            'online_count': len(online_users[community_id])
+        }, room=community_id)
+    except Exception as e:
+        logger.error(f"Error joining community: {e}")
+        emit('error', {'message': 'Failed to join community'})
 
 
 @socketio.on('leave_community')
@@ -224,27 +228,31 @@ def handle_message(data):
         print(f"Message rejected: Missing required fields (community_id={community_id}, user_id={user_id}, text={text})")
         return
 
-    msg = {
-        'community_id': community_id,
-        'sender_id': user_id,
-        'text': text,
-        'fileUrl': file_url,
-        'parentMessageId': parent_id,
-        'mentions': mentions,
-        'reactions': {},
-        'readBy': [user_id],
-        'createdAt': datetime.utcnow(),
-        'deleted': False
-    }
+    try:
+        msg = {
+            'community_id': community_id,
+            'sender_id': user_id,
+            'text': text,
+            'fileUrl': file_url,
+            'parentMessageId': parent_id,
+            'mentions': mentions,
+            'reactions': {},
+            'readBy': [user_id],
+            'createdAt': datetime.utcnow(),
+            'deleted': False
+        }
 
-    msgs_col = get_collection('community_messages')
-    result = msgs_col.insert_one(msg)
-    msg['_id'] = str(result.inserted_id)
-    msg['createdAt'] = msg['createdAt'].isoformat()
-    msg['sender'] = _get_sender_info(user_id)
+        msgs_col = get_collection('community_messages')
+        result = msgs_col.insert_one(msg)
+        msg['_id'] = str(result.inserted_id)
+        msg['createdAt'] = msg['createdAt'].isoformat()
+        msg['sender'] = _get_sender_info(user_id)
 
-    print(f"Emitting new_message to room {community_id}")
-    emit('new_message', msg, room=community_id)
+        print(f"Emitting new_message to room {community_id}")
+        emit('new_message', msg, room=community_id)
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        emit('error', {'message': 'Failed to send message'})
 
 
 @socketio.on('mark_read')
