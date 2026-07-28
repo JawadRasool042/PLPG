@@ -509,10 +509,36 @@ def next_question():
     if session.get("status") != "active":
         return jsonify({"success": False, "message": "Session is no longer active"}), 409
 
-    # Enforce the per-session question limit.
     target_count = min(int(session.get("targetQuestionCount") or AI_QUIZ_QUESTION_LIMIT), AI_QUIZ_QUESTION_LIMIT)
     answered = int(session.get("totalAnswered") or 0)
-    questions_already = len(session.get("questions") or [])
+    questions = session.get("questions") or []
+    questions_already = len(questions)
+
+    # Return an existing unanswered question if one exists, even if we hit target_count
+    answered_indices = {
+        int(a.get("questionIndex", -1)) for a in (session.get("answers") or [])
+    }
+    next_idx = next(
+        (idx for idx in range(questions_already) if idx not in answered_indices),
+        None,
+    )
+    
+    if next_idx is not None:
+        # Avoid masking logic on dicts that don't match, or use a helper
+        q_copy = dict(questions[next_idx])
+        if "correct_answer" in q_copy:
+            q_copy["correct_answer"] = "***"
+        if "reasoning" in q_copy:
+            del q_copy["reasoning"]
+        
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "question_index": next_idx,
+            "question": _public_question(q_copy) if hasattr(q_copy, "keys") else q_copy,
+            "weak_concepts": list(session.get("weakConcepts") or []),
+        }), 200
+
     if answered >= target_count or questions_already >= target_count:
         return jsonify({
             "success": False,
@@ -618,11 +644,38 @@ def submit_answer():
         question_index = fallback
 
     question = questions[question_index]
-    correct_answer = str(question.get("correct_answer", "")).strip().upper()
-    is_correct = user_answer == correct_answer
     options_map = question.get("options") or {}
-    chosen_option_text = str(options_map.get(user_answer, "")).strip() if isinstance(options_map, dict) else ""
-    correct_option_text = str(options_map.get(correct_answer, "")).strip() if isinstance(options_map, dict) else ""
+    
+    def _resolve_to_letter(ans: str, opts: Any) -> str:
+        text = str(ans).strip().upper()
+        import re
+        m = re.match(r"^([A-D])[\)\].:\-\s]", text, re.IGNORECASE)
+        if m: return m.group(1).upper()
+        if isinstance(opts, list):
+            for idx, opt in enumerate(opts):
+                opt_text = str(opt).strip().upper()
+                if text == opt_text: return chr(ord('A') + idx)
+                m_opt = re.match(r"^([A-D])[\)\].:\-\s](.*)", opt_text, re.IGNORECASE)
+                if m_opt and m_opt.group(2).strip() == text: return m_opt.group(1).upper()
+        return text
+
+    correct_answer = str(question.get("correct_answer", ""))
+    user_letter = _resolve_to_letter(user_answer, options_map)
+    correct_letter = _resolve_to_letter(correct_answer, options_map)
+    is_correct = user_letter == correct_letter
+
+    if isinstance(options_map, list):
+        idx_user = ord(user_letter) - ord('A') if len(user_letter) == 1 and 'A' <= user_letter <= 'Z' else -1
+        idx_correct = ord(correct_letter) - ord('A') if len(correct_letter) == 1 and 'A' <= correct_letter <= 'Z' else -1
+        chosen_option_text = str(options_map[idx_user]).strip() if 0 <= idx_user < len(options_map) else ""
+        correct_option_text = str(options_map[idx_correct]).strip() if 0 <= idx_correct < len(options_map) else ""
+    elif isinstance(options_map, dict):
+        chosen_option_text = str(options_map.get(user_answer, "")).strip()
+        correct_option_text = str(options_map.get(correct_answer, "")).strip()
+    else:
+        chosen_option_text = ""
+        correct_option_text = ""
+
     why_wrong_map = question.get("why_wrong") or {}
     selected_reason = str(why_wrong_map.get(user_answer, "")).strip() if isinstance(why_wrong_map, dict) else ""
     answer_reasoning = (
