@@ -354,7 +354,7 @@ const Quizzes: React.FC = () => {
                         className={`px-3 py-2.5 rounded-xl border-2 text-sm font-semibold capitalize transition-colors ${
                           courseQuizDifficulty === level
                             ? 'bg-white dark:bg-slate-900 text-indigo-700 border-white'
-                            : 'bg-transparent text-white border-white/40 hover:bg-white dark:bg-slate-900/10'
+                            : 'bg-transparent text-white border-white/40 hover:bg-white hover:text-indigo-700 dark:hover:bg-slate-900/40 dark:hover:text-white'
                         }`}
                       >
                         {level}

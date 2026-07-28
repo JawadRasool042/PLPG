@@ -7,7 +7,6 @@ import {
   ClipboardList,
   History,
   Map,
-  Notebook,
   MessageSquare,
   Lightbulb,
   User,
@@ -81,12 +80,6 @@ const LEARN_LINKS: NavLinkDef[] = [
     label: 'Learning Path',
     hint: 'Your roadmap, courses, and milestones',
     icon: Map,
-  },
-  {
-    to: '/notes',
-    label: 'Notes',
-    hint: 'Study notes organized by domain',
-    icon: Notebook,
   },
   {
     to: '/quizzes/interest-check',

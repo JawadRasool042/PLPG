@@ -709,16 +709,16 @@ const LearningPath: React.FC = () => {
               <h1 className="text-2xl sm:text-3xl font-bold mb-2">{primary}</h1>
               <p className="text-white/80 leading-relaxed">{headerBlurb}</p>
               <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-4">
-                <span className="bg-white dark:bg-slate-900/20 px-3 py-1 rounded-full text-sm font-medium">
+                <span className="bg-white text-slate-800 dark:bg-slate-900/20 dark:text-white px-3 py-1 rounded-full text-sm font-medium">
                   🎯 {primaryMatchPct}% match
                 </span>
-                <span className="bg-white dark:bg-slate-900/20 px-3 py-1 rounded-full text-sm font-medium">
+                <span className="bg-white text-slate-800 dark:bg-slate-900/20 dark:text-white px-3 py-1 rounded-full text-sm font-medium">
                   📚 {currentPhase}/{totalPhases} phases
                 </span>
-                <span className="bg-white dark:bg-slate-900/20 px-3 py-1 rounded-full text-sm font-medium">
+                <span className="bg-white text-slate-800 dark:bg-slate-900/20 dark:text-white px-3 py-1 rounded-full text-sm font-medium">
                   💼 {careerTargetCount} career targets
                 </span>
-                <span className="bg-white dark:bg-slate-900/20 px-3 py-1 rounded-full text-sm font-medium capitalize">
+                <span className="bg-white text-slate-800 dark:bg-slate-900/20 dark:text-white px-3 py-1 rounded-full text-sm font-medium capitalize">
                   📝 Quiz level · {recommendedQuizDifficulty}
                 </span>
               </div>
