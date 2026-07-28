@@ -339,7 +339,7 @@ export interface WeakConceptRecord {
 // Helpers
 // ---------------------------------------------------------------------------
 const getAuthToken = (): string | null =>
-  localStorage.getItem("plpg_access_token");
+  (localStorage.getItem("plpg_access_token") || sessionStorage.getItem("plpg_access_token"));
 
 const authHeaders = () => {
   const token = getAuthToken();

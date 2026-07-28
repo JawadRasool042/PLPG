@@ -3,6 +3,29 @@ import { API_BASE_URL } from '../config/apiBase';
 const USER_ACCESS_TOKEN_KEY = 'plpg_access_token';
 const USER_REFRESH_TOKEN_KEY = 'plpg_refresh_token';
 
+const setTokens = (accessToken: string, refreshToken: string | null, rememberMe: boolean) => {
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem(USER_ACCESS_TOKEN_KEY, accessToken);
+  if (refreshToken) {
+    storage.setItem(USER_REFRESH_TOKEN_KEY, refreshToken);
+  }
+};
+
+const getAccessToken = () => {
+  return localStorage.getItem(USER_ACCESS_TOKEN_KEY) || sessionStorage.getItem(USER_ACCESS_TOKEN_KEY);
+};
+
+const getRefreshToken = () => {
+  return localStorage.getItem(USER_REFRESH_TOKEN_KEY) || sessionStorage.getItem(USER_REFRESH_TOKEN_KEY);
+};
+
+const removeTokens = () => {
+  localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
+  localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+  sessionStorage.removeItem(USER_ACCESS_TOKEN_KEY);
+  sessionStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+};
+
 export interface InterestAssessmentMe {
   completed?: boolean;
   primaryInterest?: string;
@@ -85,7 +108,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeoutM
 
 // Refresh access token
 export const refreshAccessToken = async (): Promise<boolean> => {
-  const refreshToken = localStorage.getItem(USER_REFRESH_TOKEN_KEY);
+  const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
 
   try {
@@ -98,34 +121,31 @@ export const refreshAccessToken = async (): Promise<boolean> => {
     });
 
     if (!response.ok) {
-      localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
-      localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+      removeTokens();
       return false;
     }
 
     const data = await response.json();
-    localStorage.setItem(USER_ACCESS_TOKEN_KEY, data.access_token);
-    if (data.refresh_token) {
-      localStorage.setItem(USER_REFRESH_TOKEN_KEY, data.refresh_token);
-    }
+    // Maintain token in the storage it currently exists in (refresh keeps same persistence)
+    const isRemembered = !!localStorage.getItem(USER_REFRESH_TOKEN_KEY);
+    setTokens(data.access_token, data.refresh_token, isRemembered);
     return true;
   } catch (error) {
     console.error('Token refresh failed:', error);
-    localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
-    localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+    removeTokens();
     return false;
   }
 };
 
 /** Return a valid access token, refreshing when near expiry. */
 export const getValidAccessToken = async (): Promise<string | null> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) return null;
 
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) return null;
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
   }
 
   return token;
@@ -198,7 +218,7 @@ export const registerUser = async (
 };
 
 // Login user
-export const loginUser = async (email: string, password: string): Promise<UserData> => {
+export const loginUser = async (email: string, password: string, rememberMe: boolean = false): Promise<UserData> => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     headers: {
@@ -216,10 +236,7 @@ export const loginUser = async (email: string, password: string): Promise<UserDa
   }
 
   const tokenData = await response.json();
-  localStorage.setItem(USER_ACCESS_TOKEN_KEY, tokenData.access_token);
-  if (tokenData.refresh_token) {
-    localStorage.setItem(USER_REFRESH_TOKEN_KEY, tokenData.refresh_token);
-  }
+  setTokens(tokenData.access_token, tokenData.refresh_token, rememberMe);
 
   // Get user data
   const userResponse = await fetch(`${API_BASE_URL}/auth/me`, {
@@ -238,20 +255,19 @@ export const loginUser = async (email: string, password: string): Promise<UserDa
 
 // Logout user
 export const logoutUser = async (): Promise<void> => {
-  localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
-  localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+  removeTokens();
 };
 
 // Get current user data
 export const getCurrentUserData = async (): Promise<UserData | null> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) return null;
 
   // Check if token is expired and refresh if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) return null;
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) return null;
   }
 
@@ -264,8 +280,7 @@ export const getCurrentUserData = async (): Promise<UserData | null> => {
 
     if (!response.ok) {
       if (response.status === 401) {
-        localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
-        localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+        removeTokens();
       }
       return null;
     }
@@ -273,8 +288,7 @@ export const getCurrentUserData = async (): Promise<UserData | null> => {
     const user = await response.json();
     return mapAuthMeToUserData(user as Record<string, unknown>);
   } catch (error) {
-    localStorage.removeItem(USER_ACCESS_TOKEN_KEY);
-    localStorage.removeItem(USER_REFRESH_TOKEN_KEY);
+    removeTokens();
     return null;
   }
 };
@@ -414,14 +428,14 @@ export interface SettingsData {
 
 // Get user profile
 export const getUserProfile = async (): Promise<ProfileData> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -441,14 +455,14 @@ export const getUserProfile = async (): Promise<ProfileData> => {
 
 // Update user profile
 export const updateUserProfile = async (profileData: Partial<ProfileData>): Promise<ProfileData> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -472,14 +486,14 @@ export const updateUserProfile = async (profileData: Partial<ProfileData>): Prom
 
 // Update profile avatar
 export const updateAvatar = async (avatarUrl: string): Promise<string> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -503,14 +517,14 @@ export const updateAvatar = async (avatarUrl: string): Promise<string> => {
 
 // Get user settings
 export const getUserSettings = async (): Promise<SettingsData> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -535,14 +549,14 @@ export const getUserSettings = async (): Promise<SettingsData> => {
 
 // Update user settings
 export const updateUserSettings = async (settings: Partial<SettingsData>): Promise<SettingsData> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -570,14 +584,14 @@ export const updateUserSettings = async (settings: Partial<SettingsData>): Promi
 
 // Change password
 export const changePassword = async (currentPassword: string, newPassword: string): Promise<{ message: string }> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 
@@ -604,14 +618,14 @@ export const changePassword = async (currentPassword: string, newPassword: strin
 
 // Delete account
 export const deleteAccount = async (password: string): Promise<{ message: string }> => {
-  let token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+  let token = getAccessToken();
   if (!token) throw new Error('Not authenticated');
 
   // Refresh token if needed
   if (isTokenExpired(token)) {
     const refreshed = await refreshAccessToken();
     if (!refreshed) throw new Error('Token refresh failed');
-    token = localStorage.getItem(USER_ACCESS_TOKEN_KEY);
+    token = getAccessToken();
     if (!token) throw new Error('Not authenticated');
   }
 

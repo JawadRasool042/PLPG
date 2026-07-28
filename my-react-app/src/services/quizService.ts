@@ -223,7 +223,7 @@ export interface UserProfile {
  * Get authorization token from localStorage
  */
 const getAuthToken = (): string | null => {
-  return localStorage.getItem('plpg_access_token');
+  return (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
 };
 
 /**

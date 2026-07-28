@@ -354,7 +354,7 @@ const Profile: React.FC = () => {
 
     if (learningSaveTimer.current) clearTimeout(learningSaveTimer.current);
     learningSaveTimer.current = window.setTimeout(async () => {
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
       if (!token) return;
 
       const weeklyRaw = formData.weekly_availability_hours;
@@ -467,7 +467,7 @@ const Profile: React.FC = () => {
       setError('');
       setSuccess('');
 
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
 
       const response = await fetch(`${API_BASE_URL}/profile`, {
         method: 'PUT',

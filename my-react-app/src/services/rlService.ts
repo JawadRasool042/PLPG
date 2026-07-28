@@ -137,7 +137,7 @@ export interface RLTrainingReport {
 }
 
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('plpg_access_token');
+  const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

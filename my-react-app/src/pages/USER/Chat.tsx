@@ -98,7 +98,7 @@ const Chat: React.FC = () => {
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('plpg_access_token');
+    const token = localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token');
     if (!token) return;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));

@@ -79,7 +79,7 @@ export const CommunityChatBox: React.FC<CommunityChatBoxProps> = ({ community, m
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  const token = localStorage.getItem('plpg_access_token');
+  const token = localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token');
 
   // ── Fetch messages with pagination ──
   const fetchMessages = useCallback(async (searchQuery: string, skip = 0, append = false) => {

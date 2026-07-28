@@ -40,7 +40,7 @@ const Settings: React.FC = () => {
   const fetchSettings = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
       const response = await fetch(`${API_BASE_URL}/settings`, { headers: { 'Authorization': `Bearer ${token}` } });
       if (!response.ok) throw new Error('Failed to fetch settings');
       const data = await response.json();
@@ -73,7 +73,7 @@ const Settings: React.FC = () => {
   const handleSaveSettings = async () => {
     try {
       setSaving(true);
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
       const response = await fetch(`${API_BASE_URL}/settings`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -97,7 +97,7 @@ const Settings: React.FC = () => {
     }
     try {
       setChangingPassword(true);
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
       const response = await fetch(`${API_BASE_URL}/settings/password`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -121,7 +121,7 @@ const Settings: React.FC = () => {
     }
     try {
       setDeleting(true);
-      const token = localStorage.getItem('plpg_access_token');
+      const token = (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
       const response = await fetch(`${API_BASE_URL}/account`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

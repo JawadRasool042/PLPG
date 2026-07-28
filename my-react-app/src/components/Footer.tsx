@@ -12,10 +12,10 @@ type NavItem = { label: string; to?: string; href?: string };
 type NavSection = { title: string; items: NavItem[] };
 
 const legalLinks: NavItem[] = [
-  { label: 'Privacy Policy', href: '#privacy' },
-  { label: 'Terms of Service', href: '#terms' },
-  { label: 'Cookie Policy', href: '#cookies' },
-  { label: 'Accessibility', href: '#accessibility' },
+  { label: 'Privacy Policy', to: '/about' },
+  { label: 'Terms of Service', to: '/about' },
+  { label: 'Cookie Policy', to: '/about' },
+  { label: 'Accessibility', to: '/about' },
 ];
 
 const navSections: NavSection[] = [
@@ -32,10 +32,10 @@ const navSections: NavSection[] = [
   {
     title: 'Resources',
     items: [
-      { label: 'Documentation', href: '#documentation' },
-      { label: 'Help Center', href: '#help' },
-      { label: 'Blog', href: '#blog' },
-      { label: 'Community', href: '#community' },
+      { label: 'Documentation', to: '/about' },
+      { label: 'Help Center', to: '/contact' },
+      { label: 'Blog', to: '/' },
+      { label: 'Community', to: '/chat' },
       { label: 'Login', to: '/login' },
     ],
   },
@@ -150,15 +150,28 @@ const FooterBottomBar: React.FC = () => {
       </p>
 
       <nav aria-label="Legal" className="flex flex-wrap items-center justify-center gap-6">
-        {legalLinks.map((link) => (
-          <a
-            key={link.label}
-            href={link.href}
-            className="text-sm text-gray-400 hover:text-indigo-400 transition-colors duration-200 focus:outline-none focus:underline"
-          >
-            {link.label}
-          </a>
-        ))}
+        {legalLinks.map((link) => {
+          if (link.to) {
+            return (
+              <Link
+                key={link.label}
+                to={link.to}
+                className="text-sm text-gray-400 hover:text-indigo-400 transition-colors duration-200 focus:outline-none focus:underline"
+              >
+                {link.label}
+              </Link>
+            );
+          }
+          return (
+            <a
+              key={link.label}
+              href={link.href}
+              className="text-sm text-gray-400 hover:text-indigo-400 transition-colors duration-200 focus:outline-none focus:underline"
+            >
+              {link.label}
+            </a>
+          );
+        })}
       </nav>
     </div>
   );
@@ -237,15 +250,15 @@ const FullFooterContent: React.FC = () => (
       </ul>
 
       <div className="mt-6">
-        <a
-          href="#contact"
+        <Link
+          to="/contact"
           className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg hover:from-indigo-700 hover:to-purple-700 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900"
         >
           <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
           </svg>
           Send Message
-        </a>
+        </Link>
       </div>
     </section>
   </div>

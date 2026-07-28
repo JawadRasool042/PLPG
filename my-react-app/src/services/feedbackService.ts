@@ -7,7 +7,7 @@
 
 import { API_BASE_URL } from '../config/apiBase';
 
-const getAuthToken = (): string | null => localStorage.getItem('plpg_access_token');
+const getAuthToken = (): string | null => (localStorage.getItem('plpg_access_token') || sessionStorage.getItem('plpg_access_token'));
 
 const authHeaders = (): HeadersInit => {
   const token = getAuthToken();

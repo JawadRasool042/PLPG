@@ -89,7 +89,7 @@ interface AppState {
   isAuthenticated: boolean;
   hasCompletedOnboarding: boolean;
   userInterests: UserInterests | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   register: (userData: Omit<User, 'id' | 'role'> & { password: string }) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   setUser: (user: User) => void;
@@ -217,8 +217,8 @@ export const useStore = create<AppState>()(
         }
       },
 
-      login: async (email: string, password: string) => {
-        const userData = await loginUser(email, password);
+      login: async (email: string, password: string, rememberMe: boolean = false) => {
+        const userData = await loginUser(email, password, rememberMe);
         set({
           user: {
             id: userData.id,

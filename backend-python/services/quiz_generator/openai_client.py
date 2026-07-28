@@ -7,8 +7,8 @@ from utils.openai_request import chat_completions, get_model_chain
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-FALLBACK_OPENAI_MODELS = ("gpt-4o-mini", "gpt-3.5-turbo")
+DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+FALLBACK_OPENAI_MODELS = ("gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo")
 OPENAI_REQUEST_TIMEOUT_SECONDS = float(os.getenv("OPENAI_QUIZ_TIMEOUT", "12"))
 OPENAI_QUIZ_MAX_TOKENS = int(os.getenv("OPENAI_QUIZ_MAX_TOKENS", "1600"))
 
