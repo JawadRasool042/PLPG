@@ -105,6 +105,9 @@ def create_app(config_name=None):
     # Auto-seed communities (always, so production instances aren't empty)
     _safe_run_seed("seed_communities", "seed_communities", "Communities auto-seeded")
     
+    # Auto-seed admin account
+    _safe_run_seed("seed_admin", "seed_admin", "Admin auto-seeded")
+    
     # Register blueprints
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(profile_bp, url_prefix='/api')
