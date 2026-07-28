@@ -358,6 +358,7 @@ def submit_quiz_endpoint():
     mongo_attempt_id = str(attempt_id)
     try:
         from services.remediation_service import persist_attempt_snapshot, process_attempt_after_scoring
+        from models.user_performance import UserPerformance
 
         mongo_attempt_id = persist_attempt_snapshot(
             user_id,
@@ -371,6 +372,19 @@ def submit_quiz_endpoint():
             },
         )
         remediation_payload = process_attempt_after_scoring(user_id, mongo_attempt_id)
+
+        try:
+            UserPerformance.update_performance(str(user_id), {
+                'interest': domain or latest.get("domain") or "General",
+                'score': score,
+                'correctCount': sum(
+                    1 for r in mongo_results if isinstance(r, dict) and r.get("isCorrect")
+                ),
+                'totalQuestions': len(mongo_results),
+            })
+        except Exception as perf_exc:
+            logger.warning("Failed to sync AI Quiz to UserPerformance: %s", perf_exc)
+
     except Exception as exc:  # noqa: BLE001
         logger.warning("Mixed quiz remediation hook failed for user %s: %s", user_id, exc)
 

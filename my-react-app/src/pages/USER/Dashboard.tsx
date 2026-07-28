@@ -205,7 +205,7 @@ function LearningProgressCard({
   return (
     <>
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
           <span aria-hidden>📈</span>
           Quiz scores
         </h2>
@@ -219,7 +219,7 @@ function LearningProgressCard({
         )}
       </div>
 
-      <div className="relative h-80 bg-slate-50 rounded-xl p-4 sm:p-6 border border-slate-200 flex items-center justify-center">
+      <div className="relative h-80 bg-slate-50 dark:bg-slate-950 rounded-xl p-4 sm:p-6 border border-slate-200 dark:border-indigo-500/30 flex items-center justify-center">
         {hasChartData ? (
         <svg
           className="w-full max-w-3xl h-72 sm:h-80"
@@ -323,7 +323,7 @@ function LearningProgressCard({
           })}
         </svg>
         ) : (
-          <p className="text-sm text-slate-500 text-center px-4 flex items-center justify-center gap-2">
+          <p className="text-sm text-slate-500 dark:text-slate-400 text-center px-4 flex items-center justify-center gap-2">
             <span aria-hidden>📝</span>
             Take a quiz to see your weekly scores here.
           </p>
@@ -331,7 +331,7 @@ function LearningProgressCard({
       </div>
 
       <div className="mt-8 grid md:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100">
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/40 dark:to-purple-900/40 rounded-xl p-4 border border-indigo-100 dark:border-indigo-500/30">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -347,17 +347,17 @@ function LearningProgressCard({
                 className={`text-2xl font-bold tabular-nums ${
                   hasChartData && weeklyProgress.trendDelta != null && weeklyProgress.trendDelta < 0
                     ? 'text-rose-700'
-                    : 'text-slate-900'
+                    : 'text-slate-900 dark:text-white'
                 }`}
               >
                 {scoreChangeDisplay}
               </p>
-              <p className="text-xs text-slate-600">Score change</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">Score change</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/40 dark:to-emerald-900/40 rounded-xl p-4 border border-green-100 dark:border-emerald-500/30">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -365,13 +365,13 @@ function LearningProgressCard({
               </svg>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{activeWeeksDisplay}</p>
-              <p className="text-xs text-slate-600">Active weeks</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{activeWeeksDisplay}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">Active weeks</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-4 border border-yellow-100">
+        <div className="bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/40 dark:to-orange-900/40 rounded-xl p-4 border border-yellow-100 dark:border-orange-500/30">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-yellow-600 rounded-lg flex items-center justify-center shrink-0">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -384,8 +384,8 @@ function LearningProgressCard({
               </svg>
             </div>
             <div>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">{thisWeekDisplay}</p>
-              <p className="text-xs text-slate-600">This week</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{thisWeekDisplay}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">This week</p>
             </div>
           </div>
         </div>
@@ -615,7 +615,7 @@ const Dashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 pt-24 pb-12">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 dark:from-slate-950 dark:to-indigo-950 pt-24 pb-12">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header Skeleton */}
           <div className="mb-8 space-y-3">
@@ -639,14 +639,14 @@ const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 pt-24 pb-12">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-indigo-50 dark:from-slate-950 dark:to-indigo-950 pt-24 pb-12">
       <div className="max-w-7xl mx-auto px-4">
         {/* Welcome Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white">
             Welcome back, {user.firstName} <span className="inline-block" aria-hidden>👋</span>
           </h1>
-          <p className="mt-2 text-slate-600 text-sm sm:text-base max-w-2xl">
+          <p className="mt-2 text-slate-600 dark:text-slate-300 text-sm sm:text-base max-w-2xl">
             {hasCompletedOnboarding
               ? hasQuizActivity
                 ? 'Here’s your progress and what to do next.'
@@ -662,11 +662,11 @@ const Dashboard: React.FC = () => {
               key={action.label}
               type="button"
               onClick={() => navigate(action.to)}
-              className="group text-left bg-white rounded-xl border border-slate-200 p-4 shadow-sm hover:border-indigo-200 hover:shadow-md hover:bg-indigo-50/40 transition-all"
+              className="group text-left bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] hover:border-indigo-200 hover:shadow-md hover:bg-indigo-50 dark:hover:bg-indigo-900/40/40 dark:hover:bg-indigo-900/40 transition-all"
             >
               <span className="text-2xl mb-3 block" aria-hidden>{action.icon}</span>
-              <p className="font-semibold text-slate-900 group-hover:text-indigo-700">{action.label}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{action.description}</p>
+              <p className="font-semibold text-slate-900 dark:text-white group-hover:text-indigo-700">{action.label}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{action.description}</p>
             </button>
           ))}
         </div>
@@ -674,27 +674,27 @@ const Dashboard: React.FC = () => {
         {/* At-a-glance stats */}
         {hasCompletedOnboarding && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Quizzes</p>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Quizzes</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
                 {hasQuizActivity ? statsSummary.total : '—'}
               </p>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Avg score</p>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Avg score</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
                 {hasQuizActivity ? `${Math.round(statsSummary.avg)}%` : '—'}
               </p>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Best score</p>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Best score</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
                 {hasQuizActivity ? `${Math.round(statsSummary.best)}%` : '—'}
               </p>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">Accuracy</p>
-              <p className="text-2xl font-bold text-slate-900 tabular-nums mt-1">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">Accuracy</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums mt-1">
                 {statsSummary.accuracy != null ? `${statsSummary.accuracy}%` : '—'}
               </p>
             </div>
@@ -706,7 +706,7 @@ const Dashboard: React.FC = () => {
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-xl p-8 mb-8 text-white">
             <div className="flex items-start gap-6">
               <div className="flex-shrink-0">
-                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <div className="w-16 h-16 bg-white dark:bg-slate-900/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
@@ -722,7 +722,7 @@ const Dashboard: React.FC = () => {
                 </p>
                 <button
                   onClick={() => navigate('/quizzes/interest-check')}
-                  className="px-6 py-3 bg-white text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 transition-all shadow-lg flex items-center gap-2"
+                  className="px-6 py-3 bg-white dark:bg-slate-900 text-indigo-600 rounded-xl font-semibold hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-all shadow-lg flex items-center gap-2"
                 >
                   <span aria-hidden>🎯</span>
                   Rate your interests
@@ -734,16 +734,16 @@ const Dashboard: React.FC = () => {
 
         {/* Completed Onboarding - Show Interests */}
         {hasCompletedOnboarding && userInterests && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-6 sm:p-8 mb-8">
             <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span aria-hidden>🎯</span>
                 Your interests
               </h2>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => navigate('/quizzes/interest-check')}
-                  className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 rounded-lg font-medium transition-colors text-sm flex items-center gap-1.5"
+                  className="px-4 py-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-lg font-medium transition-colors text-sm flex items-center gap-1.5"
                 >
                   <span aria-hidden>✏️</span>
                   Update
@@ -769,7 +769,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             <div className={topInterestRows.length > 0 ? 'grid md:grid-cols-2 gap-6' : ''}>
-              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 border border-indigo-100">
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/40 dark:to-purple-900/40 rounded-xl p-6 border border-indigo-100 dark:border-indigo-500/30">
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-2xl">
                     <span aria-hidden>{getInterestDomainIcon(interestUi.primary)}</span>
@@ -779,11 +779,11 @@ const Dashboard: React.FC = () => {
                       <span aria-hidden>⭐</span>
                       Top pick
                     </p>
-                    <h3 className="text-xl font-bold text-slate-900">{interestUi.primary}</h3>
+                    <h3 className="text-xl font-bold text-slate-900 dark:text-white">{interestUi.primary}</h3>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-white rounded-full h-3 overflow-hidden">
+                  <div className="flex-1 bg-white dark:bg-slate-900 rounded-full h-3 overflow-hidden">
                     <div
                       className="bg-gradient-to-r from-indigo-600 to-purple-600 h-full rounded-full transition-all"
                       style={{ width: `${interestUi.confidencePct}%` }}
@@ -796,7 +796,7 @@ const Dashboard: React.FC = () => {
               </div>
 
               {topInterestRows.length > 0 && (
-                <div className="bg-slate-50 rounded-xl p-6 border border-slate-200">
+                <div className="bg-slate-50 dark:bg-slate-950 rounded-xl p-6 border border-slate-200 dark:border-indigo-500/30">
                   <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-1.5">
                     <span aria-hidden>📋</span>
                     Other ratings
@@ -805,13 +805,13 @@ const Dashboard: React.FC = () => {
                     {topInterestRows.map((row) => (
                       <div key={row.domain}>
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-slate-900 font-medium flex items-center gap-2">
+                          <span className="text-slate-900 dark:text-white font-medium flex items-center gap-2">
                             <span className="text-lg" aria-hidden>{getInterestDomainIcon(row.domain)}</span>
                             {row.domain}
                           </span>
-                          <span className="text-sm font-semibold text-slate-600 tabular-nums">{row.pct}%</span>
+                          <span className="text-sm font-semibold text-slate-600 dark:text-slate-300 tabular-nums">{row.pct}%</span>
                         </div>
-                        <div className="bg-white rounded-full h-2 overflow-hidden border border-slate-100">
+                        <div className="bg-white dark:bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-100">
                           <div
                             className="bg-indigo-400 h-full rounded-full transition-all"
                             style={{ width: `${row.pct}%` }}
@@ -838,9 +838,9 @@ const Dashboard: React.FC = () => {
         )}
 
         {history.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-6 sm:p-8 mb-8">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span aria-hidden>📝</span>
                 Recent quizzes
               </h2>
@@ -850,7 +850,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="space-y-3">
               {history.slice(0, 3).map((attempt) => (
-                <div key={attempt.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                <div key={attempt.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 hover:border-indigo-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40/30 transition-all">
                   <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-sm ${
                       attempt.score >= 80 ? 'bg-emerald-500' : attempt.score >= 60 ? 'bg-amber-500' : 'bg-rose-500'
@@ -858,11 +858,11 @@ const Dashboard: React.FC = () => {
                       {attempt.score}%
                     </div>
                     <div>
-                      <p className="font-semibold text-slate-900 flex items-center gap-2">
+                      <p className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
                         <span aria-hidden>{getInterestDomainIcon(attempt.interest)}</span>
                         {attempt.interest}
                       </p>
-                      <p className="text-xs text-slate-500">{attempt.level} • {new Date(attempt.completedAt).toLocaleDateString()}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{attempt.level} • {new Date(attempt.completedAt).toLocaleDateString()}</p>
                     </div>
                   </div>
                   <button
@@ -879,21 +879,21 @@ const Dashboard: React.FC = () => {
 
         {/* Learning curve — real quiz history, last 8 calendar weeks (Mon-start) */}
         {hasCompletedOnboarding && hasQuizActivity && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-8 mb-8">
             <LearningProgressCard weeklyProgress={weeklyProgress} chartUid={learningChartUid} />
           </div>
         )}
 
         {/* First quiz prompt — compact when no activity yet */}
         {hasCompletedOnboarding && !hasQuizActivity && (
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8 mb-8">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-6 sm:p-8 mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center gap-6">
               <div className="flex-1">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span aria-hidden>🎯</span>
                   Ready for your first quiz?
                 </h2>
-                <p className="text-slate-600 mt-2 text-sm sm:text-base">
+                <p className="text-slate-600 dark:text-slate-300 mt-2 text-sm sm:text-base">
                   Start with{' '}
                   <span className="font-medium text-slate-800">{interestUi.primary}</span>
                   {primaryInterest ? '' : ' your top interest'} — scores, streaks, and your learning path unlock after you practice.
@@ -902,7 +902,7 @@ const Dashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => navigate('/quizzes')}
-                className="shrink-0 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
+                className="shrink-0 px-6 py-3 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)]"
               >
                 Start quiz
               </button>

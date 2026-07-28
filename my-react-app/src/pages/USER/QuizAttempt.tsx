@@ -497,11 +497,11 @@ const QuizAttemptPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
         <div className="max-w-4xl mx-auto px-4">
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
-            <p className="mt-4 text-slate-600">Loading quiz...</p>
+            <p className="mt-4 text-slate-600 dark:text-slate-300">Loading quiz...</p>
           </div>
         </div>
       </div>
@@ -511,7 +511,7 @@ const QuizAttemptPage: React.FC = () => {
   if (!quiz) {
     if (retakeBlocked) {
       return (
-        <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
           <div className="max-w-lg mx-auto px-4 text-center">
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8">
               <h2 className="text-xl font-bold text-amber-900 mb-3">Study the lesson first</h2>
@@ -547,17 +547,17 @@ const QuizAttemptPage: React.FC = () => {
   const isLastQuestion = currentQuestion === quiz.totalQuestions - 1;
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
       <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{quiz.isMixed ? quiz.domain : quiz.interest}</h1>
-              <p className="text-sm text-slate-600">Level: {quiz.isMixed ? quiz.difficulty : quiz.level}</p>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{quiz.isMixed ? quiz.domain : quiz.interest}</h1>
+              <p className="text-sm text-slate-600 dark:text-slate-300">Level: {quiz.isMixed ? quiz.difficulty : quiz.level}</p>
             </div>
             <div className="text-right">
-              <p className="text-sm text-slate-600">Question</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">Question</p>
               <p className="text-2xl font-bold text-indigo-600">{currentQuestion + 1}/{quiz.totalQuestions}</p>
             </div>
           </div>
@@ -586,11 +586,11 @@ const QuizAttemptPage: React.FC = () => {
         )}
 
         {/* Question Card */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-6">
-          <h2 className="text-xl font-semibold text-slate-900 mb-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-8 mb-6">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6">
             {(question as any).type === 'scenario' && (question as any).scenario_context ? (
               <span>
-                <span className="block text-sm text-slate-500 mb-2">Scenario</span>
+                <span className="block text-sm text-slate-500 dark:text-slate-400 mb-2">Scenario</span>
                 <span className="block whitespace-pre-wrap">{(question as any).scenario_context}</span>
                 <span className="block mt-4">{(question as any).q}</span>
               </span>
@@ -606,10 +606,10 @@ const QuizAttemptPage: React.FC = () => {
                 value={answers[Number((question as any).id)] || ''}
                 onChange={(e) => handleShortAnswerChange(e.target.value)}
                 rows={5}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
+                className="w-full rounded-xl border border-slate-200 dark:border-indigo-500/30 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition resize-none"
                 placeholder="Type your answer..."
               />
-              <p className="text-xs text-slate-500 mt-2">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                 Tip: include key terms and explain briefly.
               </p>
             </div>
@@ -627,7 +627,7 @@ const QuizAttemptPage: React.FC = () => {
                     onClick={() => handleAnswerSelect(letter)}
                     className={`w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
                       ? 'border-indigo-600 bg-indigo-50'
-                      : 'border-slate-200 hover:border-indigo-300 bg-white'
+                      : 'border-slate-200 dark:border-indigo-500/30 hover:border-indigo-300 bg-white dark:bg-slate-900'
                       }`}
                   >
                     <div className="flex items-center gap-3">
@@ -657,7 +657,7 @@ const QuizAttemptPage: React.FC = () => {
           <button
             onClick={handlePrevious}
             disabled={currentQuestion === 0}
-            className="px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-6 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 dark:bg-slate-950 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -690,7 +690,7 @@ const QuizAttemptPage: React.FC = () => {
         </div>
 
         {/* Question Status Grid */}
-        <div className="mt-8 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <div className="mt-8 bg-white dark:bg-slate-900 rounded-xl shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] border border-slate-200 dark:border-indigo-500/30 p-6">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Question Status</h3>
           <div className="grid grid-cols-10 gap-2">
             {Array.from({ length: quiz.totalQuestions }).map((_, idx) => (
@@ -706,7 +706,7 @@ const QuizAttemptPage: React.FC = () => {
                   ? 'bg-indigo-600 text-white'
                   : hasAnswer
                     ? 'bg-green-100 text-green-700 border-2 border-green-300'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    : 'bg-slate-100 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                   }`}
               >
                 {idx + 1}
@@ -721,15 +721,15 @@ const QuizAttemptPage: React.FC = () => {
       {/* Confirmation Modal */}
       {showConfirmation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Submit Quiz?</h3>
-            <p className="text-slate-600 mb-6">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Submit Quiz?</h3>
+            <p className="text-slate-600 dark:text-slate-300 mb-6">
               Are you sure you want to submit your quiz? You won't be able to change your answers after submission.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowConfirmation(false)}
-                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
+                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 dark:bg-slate-950 transition-colors"
               >
                 Cancel
               </button>

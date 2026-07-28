@@ -22,8 +22,15 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, classification_report
 
-
-
+def safe_load_model(path):
+    import warnings
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        model = joblib.load(path)
+        for warn in w:
+            if "InconsistentVersionWarning" in str(warn.message):
+                raise RuntimeError("InconsistentVersionWarning detected. Model needs retraining.")
+        return model
 
 # ===============================================================
 # Configuration
@@ -497,7 +504,7 @@ def train_model(df: pd.DataFrame = None, force_retrain: bool = False, dataset_pa
     # Check if model already exists
     if os.path.exists(MODEL_PATH) and not force_retrain:
         print(f"Loading existing model from: {MODEL_PATH}")
-        _MODEL_CACHE = joblib.load(MODEL_PATH)
+        _MODEL_CACHE = safe_load_model(MODEL_PATH)
         return _MODEL_CACHE
     
     if df is None:
@@ -573,7 +580,7 @@ def predict_interest(user_scores: dict, model=None, dataset_path: str | None = N
         if _MODEL_CACHE is not None:
             model = _MODEL_CACHE
         elif os.path.exists(MODEL_PATH):
-            model = joblib.load(MODEL_PATH)
+            model = safe_load_model(MODEL_PATH)
             _MODEL_CACHE = model
         else:
             model = train_model(dataset_path=dataset_path)
@@ -1045,7 +1052,7 @@ def get_ml_probability_scores(user_scores: dict) -> dict:
         model = _MODEL_CACHE
     elif os.path.exists(MODEL_PATH):
         try:
-            model = joblib.load(MODEL_PATH)
+            model = safe_load_model(MODEL_PATH)
             _MODEL_CACHE = model
         except Exception:
             model = train_model()
@@ -1090,7 +1097,7 @@ def train_model(df: pd.DataFrame = None, force_retrain: bool = False, dataset_pa
     if os.path.exists(MODEL_PATH) and not force_retrain:
         try:
             logger.info(f"Loading existing model from: {MODEL_PATH}")
-            _MODEL_CACHE = joblib.load(MODEL_PATH)
+            _MODEL_CACHE = safe_load_model(MODEL_PATH)
             return _MODEL_CACHE
         except Exception as exc:
             logger.warning(f"Failed to load existing model, retraining: {exc}")
@@ -1147,7 +1154,7 @@ def predict_interest(user_scores: dict, model=None, dataset_path: str | None = N
             model = _MODEL_CACHE
         elif os.path.exists(MODEL_PATH):
             try:
-                model = joblib.load(MODEL_PATH)
+                model = safe_load_model(MODEL_PATH)
                 _MODEL_CACHE = model
             except Exception:
                 model = train_model(dataset_path=dataset_path)

@@ -140,12 +140,12 @@ const Quizzes: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pt-24 pb-12">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pt-24 pb-12">
       <div className="max-w-4xl mx-auto px-4">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Quiz Hub</h1>
-            <p className="text-slate-600 text-sm mt-1">
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Quiz Hub</h1>
+            <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">
               {hasCompletedOnboarding
                 ? 'Pick a topic and difficulty — questions are built for you on the spot.'
                 : 'Rate your interests to unlock personalized quizzes.'}
@@ -186,23 +186,23 @@ const Quizzes: React.FC = () => {
 
         {performance && performance.overallStats.totalQuizzes > 0 && (
           <div className="grid grid-cols-3 gap-3 mb-6">
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 text-center">
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 px-4 py-3 text-center">
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
                 {performance.overallStats.totalQuizzes}
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">Quizzes</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Quizzes</p>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 text-center">
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 px-4 py-3 text-center">
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
                 {performance.overallStats.averageScore}%
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">Average</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Average</p>
             </div>
-            <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 text-center">
-              <p className="text-2xl font-bold text-slate-900 tabular-nums">
+            <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 px-4 py-3 text-center">
+              <p className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
                 {performance.overallStats.bestScore}%
               </p>
-              <p className="text-xs text-slate-500 mt-0.5">Best</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Best</p>
             </div>
           </div>
         )}
@@ -242,7 +242,7 @@ const Quizzes: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowTopicPicker((open) => !open)}
-                      className="w-full flex items-center justify-between gap-3 rounded-xl bg-white/10 border border-white/25 px-4 py-3.5 hover:bg-white/15 transition-colors text-left"
+                      className="w-full flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-slate-900/10 border border-white/25 px-4 py-3.5 hover:bg-white dark:bg-slate-900/15 transition-colors text-left"
                       aria-expanded={showTopicPicker}
                       aria-haspopup="listbox"
                     >
@@ -260,7 +260,7 @@ const Quizzes: React.FC = () => {
 
                     {showTopicPicker && (
                       <div
-                        className="absolute z-20 left-0 top-full mt-2 w-full rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden"
+                        className="absolute z-20 left-0 top-full mt-2 w-full rounded-xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-indigo-500/30 overflow-hidden"
                         role="listbox"
                         aria-label="Quiz topics"
                       >
@@ -286,7 +286,7 @@ const Quizzes: React.FC = () => {
                                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors ${
                                       selected
                                         ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                                        : 'text-slate-700 hover:bg-slate-50'
+                                        : 'text-slate-700 hover:bg-slate-50 dark:bg-slate-950'
                                     }`}
                                   >
                                     <span className="text-base shrink-0" aria-hidden>
@@ -320,7 +320,7 @@ const Quizzes: React.FC = () => {
                                     className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors ${
                                       selected
                                         ? 'bg-indigo-50 text-indigo-700 font-semibold'
-                                        : 'text-slate-700 hover:bg-slate-50'
+                                        : 'text-slate-700 hover:bg-slate-50 dark:bg-slate-950'
                                     }`}
                                   >
                                     <span className="text-base shrink-0" aria-hidden>
@@ -349,8 +349,8 @@ const Quizzes: React.FC = () => {
                         onClick={() => setCourseQuizDifficulty(level)}
                         className={`px-3 py-2.5 rounded-xl border-2 text-sm font-semibold capitalize transition-colors ${
                           courseQuizDifficulty === level
-                            ? 'bg-white text-indigo-700 border-white'
-                            : 'bg-transparent text-white border-white/40 hover:bg-white/10'
+                            ? 'bg-white dark:bg-slate-900 text-indigo-700 border-white'
+                            : 'bg-transparent text-white border-white/40 hover:bg-white dark:bg-slate-900/10'
                         }`}
                       >
                         {level}
@@ -361,7 +361,7 @@ const Quizzes: React.FC = () => {
                     type="button"
                     onClick={handleStartCourseTopicQuiz}
                     disabled={!selectedCourseTopic || startingCourseQuiz}
-                    className="w-full px-8 py-3.5 bg-white text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full px-8 py-3.5 bg-white dark:bg-slate-900 text-indigo-700 rounded-xl font-semibold hover:bg-indigo-50 dark:hover:bg-indigo-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {startingCourseQuiz ? 'Starting…' : 'Start Quiz'}
                   </button>
@@ -376,27 +376,27 @@ const Quizzes: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate('/quizzes/recent')}
-              className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 p-4 hover:border-indigo-200 hover:shadow-sm transition-all text-left"
+              className="flex items-center gap-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 hover:border-indigo-200 hover:shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] transition-all text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
                 <History className="w-5 h-5 text-indigo-600" aria-hidden />
               </div>
               <div>
-                <p className="font-semibold text-slate-900">Recent quizzes</p>
-                <p className="text-xs text-slate-500">Scores and past attempts</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Recent quizzes</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Scores and past attempts</p>
               </div>
             </button>
             <button
               type="button"
               onClick={() => navigate('/learning-path')}
-              className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 p-4 hover:border-indigo-200 hover:shadow-sm transition-all text-left"
+              className="flex items-center gap-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-indigo-500/30 p-4 hover:border-indigo-200 hover:shadow-sm dark:shadow-[0_0_15px_rgba(99,102,241,0.15)] transition-all text-left"
             >
               <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center shrink-0">
                 <Map className="w-5 h-5 text-purple-600" aria-hidden />
               </div>
               <div>
-                <p className="font-semibold text-slate-900">Learning path</p>
-                <p className="text-xs text-slate-500">Roadmap and milestones</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Learning path</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Roadmap and milestones</p>
               </div>
             </button>
           </div>
