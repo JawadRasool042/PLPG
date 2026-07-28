@@ -29,7 +29,11 @@ const Quizzes: React.FC = () => {
   const [showTopicPicker, setShowTopicPicker] = useState(false);
   const [courseQuizDifficulty, setCourseQuizDifficulty] = useState<
     'basic' | 'intermediate' | 'advanced' | 'expert'
-  >('basic');
+  >(() => {
+    const saved = localStorage.getItem('plpg_last_quiz_difficulty');
+    const valid = ['basic', 'intermediate', 'advanced', 'expert'];
+    return (valid.includes(saved ?? '') ? saved : 'basic') as 'basic' | 'intermediate' | 'advanced' | 'expert';
+  });
   const [startingCourseQuiz, setStartingCourseQuiz] = useState(false);
   const topicPickerRef = useRef<HTMLDivElement>(null);
 
@@ -242,7 +246,7 @@ const Quizzes: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setShowTopicPicker((open) => !open)}
-                      className="w-full flex items-center justify-between gap-3 rounded-xl bg-white dark:bg-slate-900/10 border border-white/25 px-4 py-3.5 hover:bg-white dark:bg-slate-900/15 transition-colors text-left"
+                      className="w-full flex items-center justify-between gap-3 rounded-xl bg-white/15 border border-white/30 px-4 py-3.5 hover:bg-white/25 transition-colors text-left text-white"
                       aria-expanded={showTopicPicker}
                       aria-haspopup="listbox"
                     >
@@ -250,10 +254,10 @@ const Quizzes: React.FC = () => {
                         <span className="text-2xl shrink-0" aria-hidden>
                           {getInterestDomainIcon(selectedCourseTopic ?? '')}
                         </span>
-                        <span className="font-semibold truncate">{selectedCourseTopic}</span>
+                        <span className="font-semibold truncate text-white">{selectedCourseTopic}</span>
                       </span>
                       <ChevronDown
-                        className={`w-5 h-5 shrink-0 text-indigo-100 transition-transform ${showTopicPicker ? 'rotate-180' : ''}`}
+                        className={`w-5 h-5 shrink-0 text-white transition-transform ${showTopicPicker ? 'rotate-180' : ''}`}
                         aria-hidden
                       />
                     </button>

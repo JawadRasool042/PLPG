@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../config/apiBase';
 import { CommunityChatBox } from '../../components/CommunityChatBox';
 import { io, Socket } from 'socket.io-client';
-import { Users, MessageSquare, Paperclip, X } from 'lucide-react';
+import { Users, Paperclip, X } from 'lucide-react';
 import LoadingSkeleton from '../../components/LoadingSkeleton';
 
 import { getValidAccessToken } from '../../services/authService';
@@ -59,7 +59,7 @@ let cachedCommunities: Community[] | null = null;
 let cachedMyCommunities: string[] | null = null;
 
 const Chat: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'direct' | 'communities'>('direct');
+  const [activeTab, setActiveTab] = useState<'direct' | 'communities'>('communities');
   const [toast, setToast] = useState<{message: string, type: 'error'|'success'} | null>(null);
 
   // auto-hide toast
@@ -404,17 +404,11 @@ const Chat: React.FC = () => {
             {/* Sidebar */}
             <div className="w-80 border-r border-gray-200 flex flex-col bg-white dark:bg-slate-900">
               
-              {/* Tabs */}
+              {/* Tab hidden – only Communities shown */}
               <div className="flex border-b border-gray-200">
                 <button 
-                  onClick={() => setActiveTab('direct')}
-                  className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 ${activeTab === 'direct' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
-                >
-                  <MessageSquare className="w-4 h-4" /> Direct
-                </button>
-                <button 
                   onClick={() => setActiveTab('communities')}
-                  className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 ${activeTab === 'communities' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
+                  className="flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/50"
                 >
                   <Users className="w-4 h-4" /> Communities
                 </button>

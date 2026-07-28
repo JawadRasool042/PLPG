@@ -11,7 +11,7 @@ const Login: React.FC = () => {
   const { login, isAuthenticated } = useStore();
 
   const [loading, setLoading] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe] = useState(true); // always remember
   const [showPassword, setShowPassword] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -138,16 +138,7 @@ const Login: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <label className="flex items-center">
-                <input 
-                  type="checkbox" 
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" 
-                />
-                <span className="ml-2 text-sm text-gray-600">Remember me</span>
-              </label>
+            <div className="flex items-center justify-end">
               <Link to="/forgot-password" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
                 Forgot password?
               </Link>

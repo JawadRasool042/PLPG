@@ -262,6 +262,14 @@ const AIQuiz: React.FC = () => {
       setFeedback(null);
       const domain = data.topic || topic;
       if (data.attemptId) {
+        // Persist recommended difficulty so the next quiz auto-advances
+        try {
+          const rec = data.recommendation || deriveLevelRecommendation(data.score ?? 0, difficulty);
+          if (rec?.recommended) {
+            localStorage.setItem('plpg_last_quiz_difficulty', rec.recommended);
+          }
+        } catch { /* non-critical */ }
+
         navigate(`/quiz/results/${data.attemptId}`, {
           state: {
             attemptSnapshot: buildAIQuizAttemptSnapshot(data, data.attemptId),

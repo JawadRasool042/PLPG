@@ -16,7 +16,7 @@ import {
   ChevronDown,
   Menu,
   X,
-  Bell, Sun, Moon,
+  Bell,
   BookOpen,
   Lock,
   type LucideIcon,
@@ -136,7 +136,7 @@ const persistReadNotifIds = (userId: string | undefined, ids: Set<string>) => {
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAuthenticated, logout, userInterests, hasCompletedOnboarding, theme, setTheme } = useStore();
+  const { user, isAuthenticated, logout, userInterests, hasCompletedOnboarding } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [practiceOpen, setPracticeOpen] = useState(false);
@@ -602,15 +602,7 @@ const Navbar: React.FC = () => {
           <div className="nav-actions">
             {isAuthenticated ? (
               <>
-                <motion.button
-                  type="button"
-                  whileTap={{ scale: 0.96 }}
-                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                  className="nav-icon-btn mr-2"
-                  aria-label="Toggle Night Mode"
-                >
-                  {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" strokeWidth={2} /> : <Moon className="h-[18px] w-[18px]" strokeWidth={2} />}
-                </motion.button>
+                {/* Dark mode toggle hidden per user preference */}
                 <div className="relative" ref={notifRef}>
                   <motion.button
                     type="button"
