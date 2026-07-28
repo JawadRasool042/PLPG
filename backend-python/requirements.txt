@@ -23,7 +23,7 @@ jsonschema
 
 # Machine Learning
 pandas
-scikit-learn
+scikit-learn==1.8.0
 matplotlib
 joblib
 numpy
